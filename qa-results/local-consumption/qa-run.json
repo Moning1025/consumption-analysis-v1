@@ -1,0 +1,576 @@
+{
+  "schema_version": 2,
+  "run_id": "qa-214531d39adf",
+  "revision": 3,
+  "profile": "plan",
+  "test_intent": "non_ui_validation",
+  "execution_level": "blocked",
+  "selected_path": "undetermined",
+  "created_at": "2026-10-13T05:46:48.561074+00:00",
+  "target": {
+    "type": "attachment_or_directory",
+    "name": "多源数据融合的本地消费分析系统 V1.0",
+    "source": "D:\\Python\\pythonProject3"
+  },
+  "request_contract": {
+    "request_summary": "对多源数据融合的本地消费分析系统 V1.0（pywebview 桌面应用，Python+SQLite+单文件SPA）做全过程系统测试，覆盖登录鉴权、数据接入台（拖拽导入/zip解压/批次清单/预处理进度）、清洗融合流水线、RFM、情感分析、预测异常、空间热点、推荐、API监测、大屏、系统设置共11章功能。账号 admin/admin123456。启动命令 python main.py。",
+    "request_hash": "sha256:eca68999aae4930eb3ec24134f7c0dd2903b622b617e39202e2ba22d3a827df1",
+    "task_mode": "plan",
+    "scope": {
+      "included_source_ids": [],
+      "excluded_source_ids": [],
+      "included_rounds": [],
+      "excluded_rounds": []
+    },
+    "evidence_policy": {
+      "allow_new_execution": false,
+      "allow_precheck_bug_promotion": false,
+      "required_bug_evidence_level": "L2_observation"
+    },
+    "delivery": {
+      "artifact_required": true,
+      "format": "lark_doc",
+      "carrier": "lark_doc",
+      "filenames": [
+        "多源数据融合的本地消费分析系统 V1.0-QA测试方案与报告"
+      ],
+      "artifacts": [
+        {
+          "format": "lark_doc",
+          "carrier": "lark_doc",
+          "filename": "多源数据融合的本地消费分析系统 V1.0-QA测试方案与报告"
+        }
+      ],
+      "required_sections": [],
+      "section_order": [],
+      "must_surface_to_user": true
+    }
+  },
+  "phase_receipts": [
+    {
+      "stage": "baseline",
+      "revision": 2,
+      "state": "CLOSED",
+      "checked_at": "2026-10-13T05:49:04.205402+00:00",
+      "source_fingerprint": "sha256:e7e0e0635f4cfd92f7d8957bc54d4140a4bc6192fc848a41da319eb06569ca7f",
+      "warnings": 0
+    },
+    {
+      "stage": "baseline",
+      "revision": 3,
+      "state": "CLOSED",
+      "checked_at": "2026-10-13T05:50:36.713082+00:00",
+      "source_fingerprint": "sha256:3cd6b62a0fa51f902f0d52ea78b8fd019d7f70af116a48f8075887ca78cce87b",
+      "warnings": 0
+    }
+  ],
+  "input": {
+    "summary": "被测系统为 pywebview 桌面应用，Python 3.10 + SQLite + 单文件 SPA(web/index.html 1870 行)。后端 55 项自动化验证全过。已知 UI 层存在拖拽导入、状态映射、新建记录弹窗、查看详情、任务执行缺参等问题。",
+    "sources": [
+      {
+        "id": "SRC-001",
+        "type": "directory",
+        "location": "D:\\Python\\pythonProject3",
+        "version": "V1.0",
+        "read_status": "read",
+        "integrity": "完整",
+        "note": "项目根目录，含 auth/pipeline/extensions/store/bridge_api.py/main.py/web/index.html"
+      },
+      {
+        "id": "SRC-002",
+        "type": "doc",
+        "location": "D:\\1\\软著\\多源数据融合的本地消费分析系统\\多源数据融合的本地消费分析系统_V1.0_用户说明书.pdf",
+        "version": "V1.0",
+        "read_status": "read",
+        "integrity": "完整",
+        "note": "11 章用户说明书，49 页"
+      },
+      {
+        "id": "SRC-003",
+        "type": "doc",
+        "location": "D:\\1\\软著\\多源数据融合的本地消费分析系统\\多源数据融合的本地消费分析系统_V1.0_源代码文档.pdf",
+        "version": "V1.0",
+        "read_status": "read",
+        "integrity": "完整",
+        "note": "源代码文档"
+      },
+      {
+        "id": "SRC-004",
+        "type": "directory",
+        "location": "E:\\多源数据融合的本地消费分析系统",
+        "version": "样例数据",
+        "read_status": "read",
+        "integrity": "完整",
+        "note": "4 个样例文件：消费数据样例.csv/.xlsx/.xls.zip/.zip"
+      },
+      {
+        "id": "SRC-005",
+        "type": "script",
+        "location": "D:\\Python\\pythonProject3\\_full_verify.py",
+        "version": "55项",
+        "read_status": "executed",
+        "integrity": "PASS 55/55",
+        "note": "后端自动化验证：结构/语法/导入/数据库/登录鉴权/任务调度/store CRUD"
+      }
+    ],
+    "assumptions": [
+      "仅本地桌面运行，无多端/网络并发",
+      "SQLite 单用户",
+      "admin 为唯一管理员账号"
+    ],
+    "conflicts": [],
+    "artifacts": [
+      {
+        "id": "SRC-001",
+        "type": "source_code",
+        "locator": "D:\\Python\\pythonProject3",
+        "access_status": "read",
+        "completeness_checked": true,
+        "note": "全部源码"
+      },
+      {
+        "id": "SRC-005",
+        "type": "execution_record",
+        "locator": "D:\\Python\\pythonProject3\\_full_verify.py",
+        "access_status": "read",
+        "completeness_checked": true,
+        "note": "55/55 PASS"
+      }
+    ]
+  },
+  "open_questions": [],
+  "change_ledger": [
+    {
+      "id": "CHG-001",
+      "revision": 3,
+      "action": "ADD",
+      "object_type": "run",
+      "added_ids": [
+        "qa-214531d39adf"
+      ],
+      "removed_ids": [],
+      "modified_ids": [],
+      "before_count": 0,
+      "after_count": 1,
+      "delta_count": 1,
+      "source": "qa_flow.py normalize",
+      "summary": "根据当前 canonical 重建机械计数台账"
+    },
+    {
+      "id": "CHG-002",
+      "revision": 3,
+      "action": "ADD",
+      "object_type": "requirement",
+      "added_ids": [
+        "REQ-LOCALCONSUMP-001",
+        "REQ-LOCALCONSUMP-002",
+        "REQ-LOCALCONSUMP-003",
+        "REQ-LOCALCONSUMP-004",
+        "REQ-LOCALCONSUMP-005",
+        "REQ-LOCALCONSUMP-006",
+        "REQ-LOCALCONSUMP-007",
+        "REQ-LOCALCONSUMP-008",
+        "REQ-LOCALCONSUMP-009",
+        "REQ-LOCALCONSUMP-010",
+        "REQ-LOCALCONSUMP-011",
+        "REQ-LOCALCONSUMP-012",
+        "REQ-LOCALCONSUMP-013",
+        "REQ-LOCALCONSUMP-014"
+      ],
+      "removed_ids": [],
+      "modified_ids": [],
+      "before_count": 0,
+      "after_count": 14,
+      "delta_count": 14,
+      "source": "qa_flow.py normalize",
+      "summary": "根据当前 canonical 重建机械计数台账"
+    },
+    {
+      "id": "CHG-003",
+      "revision": 3,
+      "action": "ADD",
+      "object_type": "risk_mechanism",
+      "added_ids": [
+        "RM-LOCALCONSUMP-001",
+        "RM-LOCALCONSUMP-002",
+        "RM-LOCALCONSUMP-003",
+        "RM-LOCALCONSUMP-004",
+        "RM-LOCALCONSUMP-005"
+      ],
+      "removed_ids": [],
+      "modified_ids": [],
+      "before_count": 0,
+      "after_count": 5,
+      "delta_count": 5,
+      "source": "qa_flow.py normalize",
+      "summary": "根据当前 canonical 重建机械计数台账"
+    },
+    {
+      "id": "CHG-004",
+      "revision": 3,
+      "action": "ADD",
+      "object_type": "case",
+      "added_ids": [
+        "TC-LOCALCONSUMP-001",
+        "TC-LOCALCONSUMP-002",
+        "TC-LOCALCONSUMP-003",
+        "TC-LOCALCONSUMP-004",
+        "TC-LOCALCONSUMP-005",
+        "TC-LOCALCONSUMP-006",
+        "TC-LOCALCONSUMP-007",
+        "TC-LOCALCONSUMP-008",
+        "TC-LOCALCONSUMP-009",
+        "TC-LOCALCONSUMP-010",
+        "TC-LOCALCONSUMP-011",
+        "TC-LOCALCONSUMP-012",
+        "TC-LOCALCONSUMP-013",
+        "TC-LOCALCONSUMP-014",
+        "TC-LOCALCONSUMP-015"
+      ],
+      "removed_ids": [],
+      "modified_ids": [],
+      "before_count": 0,
+      "after_count": 15,
+      "delta_count": 15,
+      "source": "qa_flow.py normalize",
+      "summary": "根据当前 canonical 重建机械计数台账"
+    }
+  ],
+  "environment": {},
+  "screenshot_policy": "unconfirmed",
+  "plan": {
+    "scope": [],
+    "out_of_scope": [],
+    "entry_criteria": [],
+    "exit_criteria": [],
+    "regression": []
+  },
+  "requirements": [
+    {
+      "id": "REQ-LOCALCONSUMP-001",
+      "name": "登录鉴权",
+      "source": "SRC-002 第1章",
+      "risk": "admin/admin123456 登录成功，错误密码被拒，token 鉴权有效，访客被拒",
+      "priority": "P0",
+      "summary": "登录鉴权"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-002",
+      "name": "首页总览",
+      "source": "SRC-002 第1章",
+      "risk": "欢迎语/角色/时间/演示功能按钮/日志输出区",
+      "priority": "P1",
+      "summary": "首页总览"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-003",
+      "name": "数据文件导入",
+      "source": "SRC-002 第2章",
+      "risk": "拖拽+按钮两种方式，.csv/.xlsx/.xls/.json/.zip 识别，zip 自动解压，最近导入限高滚动",
+      "priority": "P0",
+      "summary": "数据文件导入"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-004",
+      "name": "导入批次清单",
+      "source": "SRC-002 第2章",
+      "risk": "批次表格(任务/状态/进度/操作)，限高5条滚动，勾选批量删除，新建记录弹窗，刷新列表，查看详情",
+      "priority": "P0",
+      "summary": "导入批次清单"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-005",
+      "name": "导入预处理进度",
+      "source": "SRC-002 第2章",
+      "risk": "进度条+状态文案，限高滚动，状态从已接入→预处理中→已完成推进",
+      "priority": "P1",
+      "summary": "导入预处理进度"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-006",
+      "name": "清洗融合流水线",
+      "source": "SRC-002 第3章",
+      "risk": "任务队列(任务/来源表/目标表/状态/进度/操作)，限高5条，执行任务，新建记录，刷新，阶段进度条",
+      "priority": "P0",
+      "summary": "清洗融合流水线"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-007",
+      "name": "评论情感与主题",
+      "source": "SRC-002 第4章",
+      "risk": "情感分布/主题词云/评论列表",
+      "priority": "P1",
+      "summary": "评论情感与主题"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-008",
+      "name": "RFM 分层画像",
+      "source": "SRC-002 第5章",
+      "risk": "R/F/M 三维分层，客户群标签",
+      "priority": "P1",
+      "summary": "RFM 分层画像"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-009",
+      "name": "预测与异常检测",
+      "source": "SRC-002 第6章",
+      "risk": "预测曲线/异常点/阈值",
+      "priority": "P1",
+      "summary": "预测与异常检测"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-010",
+      "name": "空间热点与分布",
+      "source": "SRC-002 第7章",
+      "risk": "城市区域分布/热力",
+      "priority": "P2",
+      "summary": "空间热点与分布"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-011",
+      "name": "个性化推荐工作台",
+      "source": "SRC-002 第8章",
+      "risk": "推荐列表/排序",
+      "priority": "P2",
+      "summary": "个性化推荐工作台"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-012",
+      "name": "准实时 API 监测",
+      "source": "SRC-002 第9章",
+      "risk": "API 调用量/延迟/成功率",
+      "priority": "P2",
+      "summary": "准实时 API 监测"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-013",
+      "name": "可视化大屏",
+      "source": "SRC-002 第10章",
+      "risk": "KPI/图表/灯墙",
+      "priority": "P2",
+      "summary": "可视化大屏"
+    },
+    {
+      "id": "REQ-LOCALCONSUMP-014",
+      "name": "系统参数设置",
+      "source": "SRC-002 第11章",
+      "risk": "参数展示/修改",
+      "priority": "P2",
+      "summary": "系统参数设置"
+    }
+  ],
+  "risk_mechanisms": [
+    {
+      "id": "RM-LOCALCONSUMP-001",
+      "name": "拖拽导入链路",
+      "mechanism": "pywebview 6.x DOM drop API + 文件路径注入 + zip 解压 + 批次登记",
+      "priority": "P0"
+    },
+    {
+      "id": "RM-LOCALCONSUMP-002",
+      "name": "批次状态机推进",
+      "mechanism": "登记后 status/progress 自动从已接入(10%)→预处理中(50%)→已完成(100%)",
+      "priority": "P0"
+    },
+    {
+      "id": "RM-LOCALCONSUMP-003",
+      "name": "清洗融合任务调度",
+      "mechanism": "run_task_cleaning_fusion_pipeline_9 需要 pipeline_id 参数，缺参报 missing_fields",
+      "priority": "P0"
+    },
+    {
+      "id": "RM-LOCALCONSUMP-004",
+      "name": "前后端状态映射",
+      "mechanism": "后端存中文状态，前端 STATUS_TEXT/STAGE_DESC 必须有中文 key 映射，否则 fallback 显示排队中",
+      "priority": "P0"
+    },
+    {
+      "id": "RM-LOCALCONSUMP-005",
+      "name": "下游模块数据依赖",
+      "mechanism": "RFM/情感/预测/推荐依赖清洗融合宽表，融合未跑完则下游空数据",
+      "priority": "P1"
+    }
+  ],
+  "observed_surfaces": [],
+  "cases": [
+    {
+      "id": "TC-LOCALCONSUMP-001",
+      "requirement": "REQ-001",
+      "title": "admin 正确密码登录",
+      "steps": "输入 admin/admin123456 点登录",
+      "expected": "跳首页，显示欢迎回来 admin，角色系统管理员",
+      "priority": "P0"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-002",
+      "requirement": "REQ-001",
+      "title": "错误密码被拒",
+      "steps": "输入 admin/wrong 点登录",
+      "expected": "提示密码错误，停留登录页",
+      "priority": "P0"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-003",
+      "requirement": "REQ-003",
+      "title": "拖拽 csv 文件导入",
+      "steps": "把 E 盘消费数据样例.csv 拖入窗口",
+      "expected": "批次清单出现新记录，状态自动推进到已完成100%",
+      "priority": "P0"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-004",
+      "requirement": "REQ-003",
+      "title": "zip 自动解压导入",
+      "steps": "拖入消费数据样例.xls.zip",
+      "expected": "zip 本身登记一条，解压出的 .xls 子文件也登记",
+      "priority": "P0"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-005",
+      "requirement": "REQ-003",
+      "title": "导入数据按钮选择文件",
+      "steps": "点导入数据按钮选 csv",
+      "expected": "走 tkinter 选择框，登记成功",
+      "priority": "P0"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-006",
+      "requirement": "REQ-004",
+      "title": "批次清单限高滚动5条",
+      "steps": "导入>5条后查看批次清单",
+      "expected": "可视区只显示5条，其余鼠标滚动",
+      "priority": "P1"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-007",
+      "requirement": "REQ-004",
+      "title": "勾选批量删除",
+      "steps": "勾选多条记录点批量删除",
+      "expected": "选中记录从清单消失，计数归零",
+      "priority": "P1"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-008",
+      "requirement": "REQ-004",
+      "title": "新建记录弹窗",
+      "steps": "点新建记录按钮",
+      "expected": "弹窗打开，字段与说明书一致",
+      "priority": "P0"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-009",
+      "requirement": "REQ-004",
+      "title": "查看详情",
+      "steps": "点某条记录的查看详情",
+      "expected": "弹窗显示该批次完整字段，不报错",
+      "priority": "P0"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-010",
+      "requirement": "REQ-005",
+      "title": "预处理进度条推进",
+      "steps": "导入后观察底部进度",
+      "expected": "10%→50%→100%，文案从排队中→解析中→已完成",
+      "priority": "P1"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-011",
+      "requirement": "REQ-006",
+      "title": "清洗融合任务队列",
+      "steps": "进清洗融合流水线页",
+      "expected": "4列表格，限高5条滚动",
+      "priority": "P0"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-012",
+      "requirement": "REQ-006",
+      "title": "执行任务不报错",
+      "steps": "点某条任务的执行任务",
+      "expected": "终端触发 pipeline_9，不抛 missing_fields",
+      "priority": "P0"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-013",
+      "requirement": "REQ-007",
+      "title": "评论情感与主题页",
+      "steps": "左侧菜单点评论情感与主题",
+      "expected": "渲染情感分布/主题列表",
+      "priority": "P1"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-014",
+      "requirement": "REQ-008",
+      "title": "RFM 分层画像页",
+      "steps": "左侧菜单点 RFM",
+      "expected": "渲染 R/F/M 三维分层",
+      "priority": "P1"
+    },
+    {
+      "id": "TC-LOCALCONSUMP-015",
+      "requirement": "REQ-013",
+      "title": "可视化大屏",
+      "steps": "左侧菜单点可视化大屏",
+      "expected": "KPI+图表+灯墙正常渲染",
+      "priority": "P2"
+    }
+  ],
+  "executions": [],
+  "evidence": [],
+  "bugs": [],
+  "bug_candidates": [],
+  "risks": [],
+  "acceptance_checks": [],
+  "blockers": [],
+  "manual_handoff": {
+    "required": false,
+    "status": "not_required",
+    "reason": "",
+    "target_platform": "",
+    "operator": "",
+    "prerequisites": [],
+    "case_ids": [],
+    "evidence_requirements": [],
+    "result_submission": []
+  },
+  "unverified": [
+    "桌面 GUI 自动化操作（pywebview 窗口内鼠标点击/拖拽）本轮无自动化执行，仅基于后端 55 项验证 + 用户人工截图反馈",
+    "RFM/情感/预测/推荐/大屏等下游模块真实数据渲染效果未做端到端 GUI 验证",
+    "清洗融合流水线为模拟推进（1s/3s/6s 假状态机），真实数据落库宽表未验证",
+    "新建记录弹窗字段与说明书一致性、查看详情弹窗内容、执行任务按钮响应需人工复验",
+    "并发/压力/异常网络/多账号切换不适用（本地单用户 SQLite）"
+  ],
+  "coverage": {
+    "requirement_total": 14,
+    "requirement_linked": 0,
+    "requirement_unlinked": 14,
+    "p0_requirement_total": 0,
+    "p0_requirement_linked": 0,
+    "case_total": 15,
+    "case_status_counts": {
+      "未执行": 15
+    },
+    "acceptance_total": 0,
+    "acceptance_status_counts": {}
+  },
+  "release_decision": {
+    "decision": "undetermined",
+    "rationale": "尚未执行。",
+    "conditions": []
+  },
+  "delivery_manifest": {
+    "source_revision": 3,
+    "outputs": [],
+    "fingerprint": "sha256:3cd6b62a0fa51f902f0d52ea78b8fd019d7f70af116a48f8075887ca78cce87b"
+  },
+  "test_data": {
+    "writes_allowed": false,
+    "accounts": [],
+    "created_records": [],
+    "cleanup": {
+      "required": false,
+      "status": "completed",
+      "command": "none",
+      "residuals": []
+    }
+  }
+}

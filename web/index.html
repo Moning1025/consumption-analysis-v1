@@ -1,0 +1,1870 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>多源数据融合的本地消费分析系统 V1.0</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+        html, body { height: 100%; }
+
+        /* ============ 登录页 ============ */
+        #loginView {
+            position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, #0b1f3a 0%, #123c5f 48%, #0e7490 100%);
+            overflow: hidden;
+        }
+        #loginView::before, #loginView::after {
+            content: ""; position: absolute; border-radius: 50%;
+            background: rgba(255, 255, 255, 0.06); pointer-events: none;
+        }
+        #loginView::before { width: 520px; height: 520px; top: -180px; right: -120px; }
+        #loginView::after { width: 380px; height: 380px; bottom: -140px; left: -100px; }
+
+        .login-card {
+            position: relative; width: 400px; background: #fff; border-radius: 18px;
+            padding: 42px 40px 34px; box-shadow: 0 24px 64px rgba(2, 18, 36, 0.45);
+            animation: cardIn .45s ease;
+        }
+        @keyframes cardIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+
+        .login-brand { text-align: center; margin-bottom: 30px; }
+        .login-brand h1 { font-size: 20px; color: #0f2b46; font-weight: 600; letter-spacing: .5px; }
+        .login-brand .badge {
+            display: inline-block; margin-top: 10px; padding: 3px 12px; border-radius: 999px;
+            background: linear-gradient(135deg, #0e7490, #0891b2); color: #fff;
+            font-size: 12px; letter-spacing: 1px;
+        }
+
+        .field { margin-bottom: 18px; }
+        .field label { display: block; font-size: 13px; color: #334155; margin-bottom: 6px; }
+        .input-wrap {
+            display: flex; align-items: center; background: #f1f5f9; border: 1px solid #e2e8f0;
+            border-radius: 10px; padding: 0 14px; transition: border-color .2s, box-shadow .2s;
+        }
+        .input-wrap:focus-within { border-color: #0e7490; box-shadow: 0 0 0 3px rgba(14, 116, 144, .12); background: #fff; }
+        .input-wrap svg { flex: none; width: 18px; height: 18px; fill: #94a3b8; margin-right: 10px; }
+        .input-wrap input {
+            flex: 1; border: none; outline: none; background: transparent;
+            height: 46px; font-size: 14px; color: #0f172a;
+        }
+        .input-wrap input::placeholder { color: #94a3b8; }
+
+        .login-options { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 22px; font-size: 13px; }
+        .login-options a { color: #0e7490; text-decoration: none; cursor: pointer; }
+        .login-options a:hover { text-decoration: underline; }
+
+        .btn-primary {
+            width: 100%; height: 46px; border: none; border-radius: 10px; cursor: pointer;
+            background: linear-gradient(135deg, #0e7490, #0891b2); color: #fff;
+            font-size: 15px; letter-spacing: 4px; transition: filter .2s, transform .1s;
+        }
+        .btn-primary:hover { filter: brightness(1.08); }
+        .btn-primary:active { transform: scale(.98); }
+        .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+
+        .login-error {
+            display: none; margin-top: 14px; padding: 10px 12px; border-radius: 8px;
+            background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; font-size: 13px;
+        }
+        .login-error.show { display: block; }
+
+        /* ============ 主界面 ============ */
+        #mainView { display: none; height: 100vh; }
+        #mainView.active { display: flex; flex-direction: column; }
+
+        .topbar {
+            height: 56px; flex: none; display: flex; align-items: center; justify-content: space-between;
+            padding: 0 22px; background: #0f172a; color: #e2e8f0;
+        }
+        .topbar .title { font-size: 16px; font-weight: 600; letter-spacing: 1px; }
+        .topbar .title small { font-size: 12px; color: #38bdf8; margin-left: 8px; }
+        .topbar .userbox { display: flex; align-items: center; gap: 14px; font-size: 13px; }
+        .topbar .userbox .who { color: #94a3b8; }
+        .topbar .userbox .who b { color: #e2e8f0; font-weight: 600; }
+        .btn-logout {
+            border: 1px solid #334155; background: transparent; color: #e2e8f0;
+            padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 13px;
+        }
+        .btn-logout:hover { background: #1e293b; }
+
+        .shell { flex: 1; display: flex; min-height: 0; }
+        .sidebar {
+            width: 220px; flex: none; background: #0f172a; color: #94a3b8;
+            padding: 14px 10px; overflow-y: auto;
+        }
+        .sidebar .menu-group { font-size: 12px; color: #475569; padding: 10px 12px 6px; letter-spacing: 1px; }
+        .sidebar .menu-item {
+            display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 2px;
+            border-radius: 8px; cursor: pointer; font-size: 14px; transition: background .15s, color .15s;
+        }
+        .sidebar .menu-item:hover { background: #1e293b; color: #e2e8f0; }
+        .sidebar .menu-item.active { background: #0e7490; color: #fff; }
+        .sidebar .menu-item .tag { margin-left: auto; font-size: 11px; color: #38bdf8; }
+
+        .main-content { flex: 1; background: #f1f5f9; padding: 24px; overflow-y: auto; }
+        .panel {
+            background: #fff; border-radius: 12px; padding: 22px 24px;
+            box-shadow: 0 4px 18px rgba(15, 23, 42, .05); margin-bottom: 20px;
+        }
+        .panel h2 { font-size: 17px; color: #0f172a; margin-bottom: 6px; }
+        .panel .sub { font-size: 13px; color: #64748b; margin-bottom: 16px; }
+        .panel .row { display: flex; gap: 12px; flex-wrap: wrap; }
+        .btn-ghost {
+            border: 1px solid #cbd5e1; background: #fff; color: #0e7490;
+            padding: 9px 18px; border-radius: 8px; cursor: pointer; font-size: 14px;
+        }
+        .btn-ghost:hover { border-color: #0e7490; background: #f0f9fb; }
+        .log-box {
+            margin-top: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+            padding: 14px 16px; font-family: Consolas, monospace; font-size: 13px;
+            min-height: 60px; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+            color: #1e293b; line-height: 1.7;
+        }
+        .log-line { padding: 2px 0; }
+        .log-line .ts { color: #94a3b8; margin-right: 6px; }
+        .log-line.INFO { color: #0f172a; }
+        .log-line.INFO::before { content: "ℹ️ "; }
+        .log-line.WARN { color: #b45309; background: #fef3c7; border-radius: 4px; padding: 1px 6px; display: inline-block; }
+        .log-line.ERROR { color: #b91c1c; background: #fee2e2; border-radius: 4px; padding: 1px 6px; display: inline-block; }
+        .welcome-banner {
+            background: linear-gradient(135deg, #0e7490, #0f2b46); color: #fff; border-radius: 12px;
+            padding: 26px 28px; margin-bottom: 20px;
+        }
+        .welcome-banner h1 { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+        .welcome-banner p { font-size: 14px; color: #a7e3f2; }
+        .welcome-banner p b { color: #fff; }
+        .placeholder { color: #64748b; text-align: center; padding: 70px 20px; }
+        .placeholder .big { font-size: 40px; margin-bottom: 12px; }
+
+        /* ============ 表格 / KPI / 进度条 / 表单 ============ */
+        .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+        .kpi { background: #fff; border-radius: 12px; padding: 16px 18px; box-shadow: 0 4px 18px rgba(15, 23, 42, .05); }
+        .kpi .num { font-size: 24px; font-weight: 700; color: #0f172a; }
+        .kpi .lbl { font-size: 12px; color: #64748b; margin-top: 4px; }
+        .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .data-table th { background: #f8fafc; color: #475569; text-align: left; padding: 9px 12px; border-bottom: 1px solid #e2e8f0; font-weight: 600; }
+        .data-table td { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; color: #0f172a; }
+        .data-table tr:hover td { background: #f8fafc; }
+        .cf-name { font-weight: 600; color: #0f172a; }
+        .cf-src { font-size: 12px; color: #64748b; margin-top: 2px; }
+        .stage-item { margin-bottom: 14px; }
+        .cf-scroll { max-height: 360px; overflow-y: auto; }
+        .cf-scroll thead th { position: sticky; top: 0; background: #f8fafc; z-index: 1; }
+        .status-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; }
+        .status-badge.pending, .status-badge.queued { background: #fef3c7; color: #b45309; }
+        .status-badge.running { background: #cffafe; color: #0e7490; }
+        .status-badge.paused { background: #e2e8f0; color: #475569; }
+        .panel-btns { display: flex; gap: 8px; position: relative; z-index: 2; }
+        .status-badge.processing { background: #dbeafe; color: #1d4ed8; }
+        .status-badge.checking { background: #fef3c7; color: #b45309; }
+        .status-badge.completed, .status-badge.active, .status-badge.succeeded { background: #dcfce7; color: #15803d; }
+        .status-badge.failed { background: #fee2e2; color: #b91c1c; }
+        .progress-wrap { background: #e2e8f0; border-radius: 999px; height: 8px; overflow: hidden; }
+        .progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #0e7490, #0891b2); transition: width .4s; }
+        .mini-form { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 10px; align-items: end; margin-bottom: 16px; }
+        .mini-form.two-col { grid-template-columns: 1fr 1fr; }
+        .modal-wide { width: 560px; }
+        .mini-form label { display: block; font-size: 12px; color: #475569; margin-bottom: 4px; }
+        .mini-form input, .mini-form select { width: 100%; height: 36px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 13px; outline: none; background: #fff; }
+        .mini-form input:focus, .mini-form select:focus { border-color: #0e7490; box-shadow: 0 0 0 3px rgba(14, 116, 144, .1); }
+        .import-btns { display: flex; gap: 12px; flex-wrap: wrap; }
+        .ing-grid { display: grid; grid-template-columns: 5fr 7fr; gap: 16px; margin-bottom: 20px; }
+        .ing-left { display: flex; flex-direction: column; gap: 16px; }
+        .ing-grid > .panel:last-child { display: flex; flex-direction: column; }
+        .batch-cards { max-height: 360px; min-height: 0; overflow-y: auto; padding-right: 4px; }
+        .panel-head { display: flex; justify-content: space-between; align-items: center; }
+        .panel-head h2 { margin: 0 0 4px; }
+        .import-choose { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+        .import-drop { border: 2px dashed #b8c4d4; border-radius: 12px; padding: 18px; text-align: center; background: #f8fafc; margin: 14px 0; transition: all .15s; }
+        .import-drop.drag-over { border-color: #0891b2; background: #ecfeff; box-shadow: 0 0 0 4px rgba(8,145,178,.12); }
+        .drop-hint { color: #64748b; font-size: 13px; margin-bottom: 0; }
+        .block-title { font-size: 14px; font-weight: 600; color: #0f172a; margin: 14px 0 8px; }
+        .recent-list { max-height: 210px; overflow-y: auto; padding-right: 4px; }
+        .recent-item { display: flex; justify-content: space-between; padding: 7px 10px; font-size: 13px; color: #334155; border-bottom: 1px solid #f1f5f9; }
+        .recent-item:last-child { border-bottom: none; }
+        .bc-time { color: #94a3b8; font-size: 12px; }
+        .list-actions { display: flex; gap: 10px; justify-content: flex-end; margin-bottom: 12px; }
+        .batch-card { display: flex; justify-content: space-between; align-items: center; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: #fff; }
+        .bc-check { display: flex; align-items: center; margin-right: 12px; cursor: pointer; flex: none; }
+        .bc-check input { width: 16px; height: 16px; accent-color: #0e7490; cursor: pointer; }
+        .batch-card:hover { border-color: #0e7490; box-shadow: 0 2px 8px rgba(14, 116, 144, .08); }
+        .bc-name { font-size: 14px; font-weight: 600; color: #0f172a; }
+        .bc-sub { font-size: 12px; color: #64748b; margin: 3px 0; }
+        .bc-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+        .bc-pct { color: #0e7490; font-weight: 600; }
+        .bc-actions { display: flex; flex-direction: column; gap: 6px; flex: none; min-width: 70px; align-items: flex-end; }
+        .bc-actions .btn-link { white-space: nowrap; font-size: 13px; }
+        #ingProgress { max-height: 300px; overflow-y: auto; padding-right: 4px; }
+        .prog-item { margin-bottom: 14px; }
+        .prog-head { display: flex; justify-content: space-between; font-size: 13px; color: #334155; margin-bottom: 4px; }
+        .prog-desc { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+        .statusbar { display: flex; gap: 24px; align-items: center; background: #f1f5f9; border-radius: 10px; padding: 10px 16px; font-size: 12px; color: #475569; }
+        .drawer-overlay, .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); z-index: 90; opacity: 0; pointer-events: none; transition: opacity .25s; }
+        .drawer-overlay.open, .modal-overlay.open { opacity: 1; pointer-events: auto; }
+        .drawer { position: absolute; top: 0; right: -420px; width: 400px; height: 100%; background: #fff; box-shadow: -8px 0 30px rgba(15, 23, 42, .18); transition: right .25s; padding: 22px; overflow-y: auto; }
+        .drawer-overlay.open .drawer { right: 0; }
+        .drv-title { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 16px; }
+        .drv-field { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+        .drv-field span { width: 110px; color: #94a3b8; flex-shrink: 0; }
+        .drv-field b { color: #0f172a; font-weight: 500; }
+        .modal { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(.96); background: #fff; border-radius: 14px; padding: 24px 26px; width: 440px; box-shadow: 0 20px 60px rgba(15, 23, 42, .25); transition: transform .25s; }
+        .modal-overlay.open .modal { transform: translate(-50%, -50%) scale(1); }
+        .modal h3 { font-size: 16px; color: #0f172a; margin-bottom: 6px; }
+        .modal .m-sub { font-size: 12px; color: #64748b; margin-bottom: 16px; }
+        .modal .m-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+        .btn-ghost.danger-ghost { color: #b91c1c; border-color: #fecaca; }
+        .btn-ghost.danger-ghost:hover { background: #fef2f2; }
+        .btn-link { background: none; border: none; color: #0e7490; font-size: 13px; cursor: pointer; padding: 2px 6px; }
+        .btn-link:hover { text-decoration: underline; }
+        .btn-link.danger { color: #b91c1c; }
+
+        /* ============ 第4~11章通用组件 ============ */
+        .kpi-row.cols3 { grid-template-columns: repeat(3, 1fr); }
+        .kpi-row.cols6 { grid-template-columns: repeat(6, 1fr); }
+        .kpi .sub2 { font-size: 11px; color: #94a3b8; margin-top: 3px; }
+        .kpi .warn { color: #b45309; }
+        .chart-box {
+            background: linear-gradient(180deg, #f8fafc, #eef4f8); border: 1px solid #e2e8f0;
+            border-radius: 10px; padding: 18px; margin-top: 10px;
+        }
+        .chart-dark {
+            background: linear-gradient(180deg, #0b1f3a, #0e2a4d); border-radius: 10px;
+            padding: 18px; margin-top: 10px; position: relative; overflow: hidden; min-height: 220px;
+        }
+        .chart-dark .map-title { color: #7dd3fc; font-size: 13px; margin-bottom: 6px; }
+        .chart-dark .map-note { color: #64748b; font-size: 12px; margin-top: 8px; }
+        .chart-dark .map-tag { position: absolute; color: #a5f3fc; font-size: 12px; background: rgba(14,116,144,.25); border: 1px solid rgba(125,211,252,.4); border-radius: 6px; padding: 3px 8px; }
+        .chart-dark .legend-bar { position: absolute; left: 18px; bottom: 14px; width: 160px; height: 8px; border-radius: 999px; background: linear-gradient(90deg, #0ea5e9, #facc15, #ef4444); }
+        .chart-dark .legend-lbl { position: absolute; left: 18px; bottom: 26px; font-size: 11px; color: #64748b; }
+        .chart-dark .view-toggle { position: absolute; right: 14px; top: 14px; display: flex; gap: 4px; }
+        .chart-dark .view-toggle button { background: rgba(255,255,255,.1); color: #cffafe; border: 1px solid rgba(125,211,252,.3); border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+        .slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; color: #334155; }
+        .slider-row .lb { width: 130px; flex-shrink: 0; }
+        .slider-row input[type=range] { flex: 1; accent-color: #0e7490; }
+        .slider-row .val { width: 44px; text-align: right; font-weight: 600; color: #0e7490; }
+        .step-bar { display: flex; gap: 0; margin-bottom: 18px; }
+        .step-bar .step { flex: 1; text-align: center; position: relative; padding-top: 26px; font-size: 12px; color: #64748b; }
+        .step-bar .step::before {
+            content: ""; position: absolute; top: 9px; left: 0; right: 0; height: 2px; background: #e2e8f0;
+        }
+        .step-bar .step::after {
+            content: ""; position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
+            width: 12px; height: 12px; border-radius: 999px; background: #e2e8f0; border: 2px solid #cbd5e1;
+        }
+        .step-bar .step.done { color: #15803d; }
+        .step-bar .step.done::before { background: #0e7490; }
+        .step-bar .step.done::after { background: #0e7490; border-color: #0e7490; }
+        .step-bar .step.cur { color: #0e7490; font-weight: 600; }
+        .step-bar .step.cur::after { background: #fff; border-color: #0e7490; box-shadow: 0 0 0 4px rgba(14,116,144,.18); }
+        .faq-item { border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+        .faq-item .faq-q { padding: 11px 14px; font-size: 13px; color: #0f172a; cursor: pointer; background: #f8fafc; display: flex; justify-content: space-between; align-items: center; }
+        .faq-item .faq-q:hover { background: #f0f9fb; }
+        .faq-item .faq-a { padding: 12px 14px; font-size: 12px; color: #475569; line-height: 1.7; display: none; border-top: 1px solid #e2e8f0; }
+        .faq-item.open .faq-a { display: block; }
+        .lamp-wall { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .lamp-group h4 { font-size: 13px; color: #0f172a; margin-bottom: 8px; }
+        .lamp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .lamp-cell { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; font-size: 12px; }
+        .lamp-cell .nm { color: #334155; margin: 4px 0; }
+        .lamp-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; background: #16a34a; margin-right: 5px; }
+        .lamp-dot.warn { background: #f59e0b; }
+        .lamp-txt { color: #15803d; }
+        .lamp-txt.warn { color: #b45309; }
+        .big-num { font-size: 44px; font-weight: 800; color: #0f172a; text-align: center; letter-spacing: 1px; }
+        .big-num small { font-size: 14px; font-weight: 500; color: #64748b; margin-left: 6px; }
+        .alert-list-item { display: flex; gap: 10px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 8px; background: #fff; }
+        .alert-list-item .rail { width: 4px; border-radius: 99px; flex-shrink: 0; }
+        .alert-list-item .rail.high { background: #ef4444; }
+        .alert-list-item .rail.mid { background: #f59e0b; }
+        .alert-list-item .rail.low { background: #38bdf8; }
+        .alert-list-item .at { flex: 1; }
+        .alert-list-item .at .t { font-size: 13px; color: #0f172a; font-weight: 600; }
+        .alert-list-item .at .d { font-size: 12px; color: #64748b; margin: 3px 0; line-height: 1.6; }
+        .alert-list-item .at .meta { font-size: 11px; color: #94a3b8; }
+        .divider-note { font-size: 12px; color: #64748b; background: #f8fafc; border-radius: 8px; padding: 10px 12px; margin-top: 12px; line-height: 1.7; }
+        .tag-chip { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 99px; background: #f0f9fb; color: #0e7490; border: 1px solid #a5e3f2; }
+        .tag-chip.warn { background: #fef3c7; color: #b45309; border-color: #fde68a; }
+    </style>
+</head>
+<body>
+
+<!-- ============ 登录页 ============ -->
+<div id="loginView">
+    <div class="login-card">
+        <div class="login-brand">
+            <h1>多源数据融合的本地消费分析系统</h1>
+            <span class="badge">V1.0</span>
+        </div>
+        <div class="field">
+            <label for="username">账号/编号</label>
+            <div class="input-wrap">
+                <svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.4 0-8 2.6-8 6v1h16v-1c0-3.4-3.6-6-8-6Z"/></svg>
+                <input id="username" type="text" placeholder="请输入用户名" autocomplete="off">
+            </div>
+        </div>
+        <div class="field">
+            <label for="password">密码</label>
+            <div class="input-wrap">
+                <svg viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1Zm2 0h6V7a3 3 0 0 0-6 0v3Z"/></svg>
+                <input id="password" type="password" placeholder="请输入密码">
+            </div>
+        </div>
+        <div class="login-options">
+            <a onclick="tip('密码重置请联系系统管理员')">忘记密码？</a>
+            <a onclick="tip('新账号由系统管理员开通')">注册</a>
+        </div>
+        <button class="btn-primary" id="loginBtn" onclick="doLogin()">登 录</button>
+        <div class="login-error" id="loginError"></div>
+    </div>
+</div>
+
+<!-- ============ 主界面 ============ -->
+<div id="mainView">
+    <div class="topbar">
+        <div class="title">多源数据融合的本地消费分析系统<small>V1.0</small></div>
+        <div class="userbox">
+            <span class="who">当前用户：<b id="whoName">-</b>（<span id="whoRole">-</span>）</span>
+            <button class="btn-logout" onclick="doLogout()">退出登录</button>
+        </div>
+    </div>
+    <div class="shell">
+        <div class="sidebar" id="sidebar"></div>
+        <div class="main-content" id="pageContent"></div>
+    </div>
+</div>
+
+<!-- ============ 通用弹窗（静态常驻，任何页面可用） ============ -->
+<div class="modal-overlay" id="newCleanModal" onclick="if(event.target===this)closeNewCleanModal()">
+    <div class="modal modal-wide">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h3 style="margin:0;">新建记录</h3>
+            <button class="btn-link" onclick="closeNewCleanModal()">关闭</button>
+        </div>
+        <div class="m-sub" style="margin-top:6px;">请填写动作所需字段。</div>
+        <div class="mini-form two-col">
+            <div><label>title（任务名称）</label><input id="cfT2" placeholder="如：餐饮订单去重与缺失值填充"></div>
+            <div><label>subtitle（任务类型）</label>
+                <select id="cfSub2">
+                    <option value="consumption_dashboard_fusion">消费分析可视化大数据融合</option>
+                    <option value="consumption_forecast_anomaly">消费预测与异常检测前置清洗</option>
+                    <option value="sentiment_topic_preparation">评论情感与主题挖掘前置清洗</option>
+                    <option value="rfm_segmentation_preparation">RFM 分层画像前置清洗</option>
+                </select>
+            </div>
+            <div><label>status（状态）</label>
+                <select id="cfStatus2">
+                    <option value="pending">排队中</option>
+                    <option value="processing">预处理中</option>
+                    <option value="running">运行中</option>
+                    <option value="completed">已完成</option>
+                </select>
+            </div>
+            <div><label>progress（进度，仅接受数字）</label><input id="cfProg2" type="number" min="0" max="100" value="0"></div>
+            <div><label>priority（优先级）</label>
+                <select id="cfPri2">
+                    <option value="高">高</option>
+                    <option value="中" selected>中</option>
+                    <option value="低">低</option>
+                </select>
+            </div>
+            <div><label>submitter（提交组）</label><input id="cfSubm2" value="数据工程组"></div>
+            <div><label>operator（操作人）</label><input id="cfOp2" value="admin"></div>
+            <div><label>详情真源载荷</label><textarea id="cfPayload2" rows="3" placeholder='{"records":[...]}'></textarea></div>
+            <div><label>meta_primary（元数据一）</label><input id="cfMeta2" placeholder="如：来源批次号"></div>
+        </div>
+        <div class="m-actions">
+            <button class="btn-ghost" onclick="closeNewCleanModal()">关闭</button>
+            <button class="btn-ghost" onclick="closeNewCleanModal()">取消</button>
+            <button class="btn-ghost" onclick="doNewCleaningTask()">提交</button>
+        </div>
+    </div>
+</div>
+
+<!-- 清洗融合：查看详情抽屉（静态常驻） -->
+<div class="drawer-overlay" id="cleanDetailDrawer" onclick="if(event.target===this)closeCleanDrawer()">
+    <div class="drawer">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:15px;font-weight:700;">查看详情</span>
+            <button class="btn-link" onclick="closeCleanDrawer()">关闭</button>
+        </div>
+        <div id="cleanDrawerBody" style="margin-top:14px;">加载中……</div>
+        <div style="margin-top:18px;text-align:right;"><button class="btn-ghost" onclick="closeCleanDrawer()">关闭</button></div>
+    </div>
+</div>
+
+<!-- 清洗融合：删除记录确认弹窗（静态常驻） -->
+<div class="modal-overlay" id="cleanDelModal" onclick="if(event.target===this)closeCleanDeleteModal()">
+    <div class="modal">
+        <h3>删除记录</h3>
+        <div class="m-sub">即将删除记录 <b id="cleanDelLabel"></b>，该操作不可撤销。</div>
+        <div class="m-actions">
+            <button class="btn-ghost" onclick="closeCleanDeleteModal()">取消</button>
+            <button class="btn-ghost danger-ghost" onclick="confirmCleanDelete()">确认删除</button>
+        </div>
+    </div>
+</div>
+
+<!-- 通用执行任务确认弹窗（第5/8/9章复用） -->
+<div class="modal-overlay" id="execModal" onclick="if(event.target===this)closeExecModal()">
+    <div class="modal">
+        <h3 id="execTitle">执行任务</h3>
+        <div class="m-sub" id="execMsg">确认执行？执行后将进入任务队列并刷新相关面板。</div>
+        <div class="m-actions">
+            <button class="btn-ghost" onclick="closeExecModal()">取消</button>
+            <button class="btn-primary" onclick="confirmExecModal()">确认执行</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let token = "";
+let currentUser = null;
+
+const ROLE_NAMES = { administrator: "系统管理员", analyst: "数据分析师", consumer: "普通用户", guest: "访客" };
+
+// 侧边栏菜单（对应《用户说明书》11 个章节；done=false 表示该模块尚未接入，点击显示占位）
+const MENUS = [
+    { key: "welcome",      label: "首页总览",       done: true  },
+    { key: "ingestion",    label: "多源数据接入台",  done: true  },
+    { key: "cleaning",     label: "清洗融合流水线",  done: true  },
+    { key: "sentiment",    label: "评论情感与主题",  done: true  },
+    { key: "rfm",          label: "RFM 分层画像",    done: true  },
+    { key: "forecast",     label: "预测与异常检测",  done: true  },
+    { key: "spatial",      label: "空间热点与分布",  done: true  },
+    { key: "recommend",    label: "个性化推荐",      done: true  },
+    { key: "apimonitor",   label: "准实时 API 监测", done: true  },
+    { key: "dashboard",    label: "可视化大屏",      done: true  },
+    { key: "settings",     label: "系统参数设置",    done: true  },
+];
+
+function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function tip(msg) {
+    alert(msg);
+}
+
+/* ---------- 登录 ---------- */
+async function doLogin() {
+    const name = document.getElementById("username").value.trim();
+    const pwd = document.getElementById("password").value;
+    const errBox = document.getElementById("loginError");
+    errBox.classList.remove("show");
+    if (!name || !pwd) {
+        errBox.textContent = "请输入账号和密码";
+        errBox.classList.add("show");
+        return;
+    }
+    const btn = document.getElementById("loginBtn");
+    btn.disabled = true;
+    try {
+        const res = await pywebview.api.login(name, pwd, "login");
+        if (res && res.success) {
+            token = res.token;
+            currentUser = res;
+            try { localStorage.setItem("lcis_token", token); } catch (e) {}
+            enterMain();
+        } else {
+            errBox.textContent = "账号或密码错误，请重试";
+            errBox.classList.add("show");
+        }
+    } catch (e) {
+        errBox.textContent = "登录服务不可用：" + e;
+        errBox.classList.add("show");
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+/* 回车提交 */
+document.addEventListener("keydown", e => {
+    if (e.key === "Enter" && document.getElementById("loginView").style.display !== "none") doLogin();
+});
+
+/* ---------- 会话恢复 / 过期 ---------- */
+function checkSession() {
+    let t = "";
+    try { t = localStorage.getItem("lcis_token") || ""; } catch (e) {}
+    if (!t) return false;
+    try {
+        const payload = JSON.parse(t.split(".")[0]);
+        if (payload.expires_at && payload.expires_at > Math.floor(Date.now() / 1000)) {
+            token = t;
+            currentUser = { username: payload.login_name, role: payload.role_code };
+            enterMain();
+            return true;
+        }
+    } catch (e) {}
+    return false;
+}
+
+function doLogout() {
+    token = "";
+    currentUser = null;
+    try { localStorage.removeItem("lcis_token"); } catch (e) {}
+    document.getElementById("mainView").classList.remove("active");
+    document.getElementById("loginView").style.display = "flex";
+}
+
+/* ---------- 主界面 ---------- */
+function enterMain() {
+    document.getElementById("loginView").style.display = "none";
+    document.getElementById("mainView").classList.add("active");
+    document.getElementById("whoName").textContent = currentUser.username || "-";
+    document.getElementById("whoRole").textContent = ROLE_NAMES[currentUser.role] || currentUser.role || "-";
+    buildSidebar();
+    renderPage("welcome");
+}
+
+function buildSidebar() {
+    const box = document.getElementById("sidebar");
+    box.innerHTML = '<div class="menu-group">系统功能模块</div>' + MENUS.map(m =>
+        `<div class="menu-item" data-key="${m.key}" onclick="renderPage('${m.key}')">${esc(m.label)}${m.done ? '<span class="tag">●</span>' : ""}</div>`
+    ).join("");
+}
+
+function renderPage(key) {
+    document.querySelectorAll(".menu-item").forEach(el =>
+        el.classList.toggle("active", el.getAttribute("data-key") === key));
+    const menu = MENUS.find(m => m.key === key);
+    const content = document.getElementById("pageContent");
+    if (!menu) return;
+    if (key === "welcome") { renderWelcome(content); return; }
+    if (key === "cleaning") { renderCleaning(content); return; }
+    if (key === "ingestion") { renderIngestion(content); return; }
+    if (key === "sentiment") { renderSentiment(content); return; }
+    if (key === "rfm") { renderRfm(content); return; }
+    if (key === "forecast") { renderForecast(content); return; }
+    if (key === "spatial") { renderSpatial(content); return; }
+    if (key === "recommend") { renderRecommend(content); return; }
+    if (key === "apimonitor") { renderApiMonitor(content); return; }
+    if (key === "dashboard") { renderDashboard(content); return; }
+    if (key === "settings") { renderSysSettings(content); return; }
+    content.innerHTML = `
+        <div class="panel">
+            <h2>${esc(menu.label)}</h2>
+            <div class="sub">该模块已规划，界面正在按《用户说明书》逐步接入。</div>
+            <div class="placeholder"><div class="big">🚧</div>「${esc(menu.label)}」模块建设中<br>可先使用左侧已点亮的功能完成演示</div>
+        </div>`;
+}
+
+function renderWelcome(content) {
+    const now = new Date().toLocaleString("zh-CN");
+    content.innerHTML = `
+        <div class="welcome-banner">
+            <h1>欢迎回来，${esc(currentUser.username)}</h1>
+            <p>当前角色：<b>${esc(ROLE_NAMES[currentUser.role] || currentUser.role)}</b>　|　登录时间：${now}　|　系统版本：V1.0</p>
+        </div>
+        <div class="panel">
+            <h2>演示功能</h2>
+            <div class="sub">以下功能已接入后端，可直接体验（其余模块按说明书逐步接入）。</div>
+            <div class="row">
+                <button class="btn-ghost" onclick="doPing()">连通性测试 ping</button>
+                <button class="btn-ghost" onclick="doClean()">启动数据清洗融合</button>
+                <button class="btn-ghost" onclick="doListTasks()">查看全部任务列表</button>
+            </div>
+            <div class="log-box" id="logBox">// 点击上方按钮，结果将显示在这里</div>
+        </div>`;
+}
+
+function log(text, level) {
+    const box = document.getElementById("logBox");
+    if (!box) return;
+    if (box.dataset.empty !== "1") { box.innerHTML = ""; box.dataset.empty = "1"; }
+    const lv = level || "INFO";
+    const now = new Date();
+    const ts = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0") + ":" + String(now.getSeconds()).padStart(2, "0");
+    box.insertAdjacentHTML("beforeend", `<div class="log-line ${lv}"><span class="ts">${ts}</span> [${lv}] ${esc(text)}</div>`);
+    box.scrollTop = box.scrollHeight;
+}
+
+async function doPing() {
+    log("发送 ping ...");
+    try {
+        const res = await pywebview.api.ping();
+        log("pong 正常，响应：" + JSON.stringify(res));
+    } catch (e) { log("错误：" + e, "ERROR"); }
+}
+
+async function doClean() {
+    log("开始派发清洗融合任务 ...");
+    try {
+        const res = await pywebview.api.run_task(
+            "run_task_cleaning_fusion_pipeline_9",
+            { pipeline_id: "PIPELINE_UI_001" },
+            token
+        );
+        if (res && res.success) {
+            const out = (res.data && res.data.handler_output) || {};
+            log(`任务编号 ${out.pipeline_task_identifier || "-"} 执行完成`);
+            log(`状态 ${out.task_status || "succeeded"}　记录数 ${out.record_count ?? "-"}　去重 ${out.deduped_record_count ?? "-"}　涉及消费者 ${out.distinct_consumer_count ?? "-"} 人`);
+            log(`融合总金额 ¥ ${out.total_amount ?? "-"}　耗时 ${out.elapsed_ms ?? (res.data && res.data.elapsed_ms) ?? "-"} ms`);
+            if (out.top_merchants && out.top_merchants.length) {
+                log(`头部商户：${out.top_merchants.slice(0, 3).map(m => m.merchant_name).join("、")}`);
+            }
+        } else {
+            log("任务失败：" + (res && res.reason ? res.reason : JSON.stringify(res)), "ERROR");
+        }
+    } catch (e) { log("错误：" + e, "ERROR"); }
+}
+
+async function doListTasks() {
+    log("拉取全部任务列表 ...");
+    try {
+        const res = await pywebview.api.list_tasks();
+        const tasks = (res && (res.tasks || res.items || res.list)) || (Array.isArray(res) ? res : []);
+        if (!tasks.length) { log("当前任务队列为空"); return; }
+        log(`共 ${tasks.length} 条任务，摘要如下：`);
+        tasks.slice(0, 8).forEach((t, i) => {
+            const name = t.task_name || t.task_identifier || t.identifier || "#" + (i + 1);
+            const st = t.task_status || t.status || "-";
+            const pct = t.progress_percent != null ? t.progress_percent + "%" : "";
+            log(`${i + 1}. ${name}　[${st}] ${pct}`);
+        });
+        if (tasks.length > 8) log(`……其余 ${tasks.length - 8} 条省略，可在各业务页面查看`);
+    } catch (e) { log("错误：" + e, "ERROR"); }
+}
+
+function renderCleaning(content) {
+    content.innerHTML = `
+        <div class="panel">
+            <div class="panel-head"><h2>清洗融合任务队列</h2>
+                <div class="panel-btns">
+                    <button class="btn-ghost" onclick="loadCleaningTasks()">刷新列表</button>
+                    <button class="btn-ghost" onclick="openNewCleanModal()">新建记录</button>
+                </div>
+            </div>
+            <div class="sub">管理去重、缺失值处理、字段映射与多源融合等处理任务，支持排队与执行状态切换。</div>
+            <div class="cf-scroll">
+            <table class="data-table">
+                <thead><tr><th>任务</th><th>状态</th><th>进度</th><th>操作</th></tr></thead>
+                <tbody id="cfRows"><tr><td colspan="4" style="text-align:center;color:#94a3b8;">加载中……</td></tr></tbody>
+            </table>
+            </div>
+        </div>
+        <div class="panel">
+            <h2>流水线阶段进度</h2>
+            <div class="sub">展示清洗、对齐、融合各阶段的执行进度与吞吐反馈。</div>
+            <div class="stage-prog" id="cfStage"></div>
+        </div>
+        <div class="panel">
+            <div class="panel-head"><h2>融合执行日志</h2><button class="btn-ghost" onclick="cfClearLog()">Clear</button></div>
+            <div class="sub">输出清洗融合过程中的运行日志与异常信息，便于排查数据质量问题。</div>
+            <div class="log-box" id="cfLog"></div>
+        </div>`;
+    renderCleanStages();
+    cfSeedLog();
+    loadCleaningTasks();
+}
+
+let cfTaskCache = [];
+
+function renderCleanStages() {
+    const el = document.getElementById("cfStage");
+    if (!el) return;
+    const stages = [
+        { name: "数据接入", pct: 100, desc: "已完成·餐饮、旅游、零售三源数据已全部接入暂存区" },
+        { name: "去重清洗", pct: 86, desc: "运行中·订单号与用户ID去重处理中，预计剩余4分钟" },
+        { name: "缺失值处理", pct: 72, desc: "运行中·餐饮门店编码缺失值按区域均值补全中" },
+        { name: "字段对齐", pct: 58, desc: "运行中·多源字段名与时间单位对齐中，预计剩余6分钟" },
+        { name: "多源融合", pct: 31, desc: "运行中·零售交易与门店维表融合中，预计剩余12分钟" },
+        { name: "质量校验", pct: 0, desc: "排队中·等待融合阶段完成后自动开始" },
+        { name: "结果输出", pct: 0, desc: "排队中·等待质量校验通过后输出结果表" },
+    ];
+    el.innerHTML = stages.map(s => {
+        const fillColor = s.pct >= 100 ? "#0e7490" : (s.pct >= 50 ? "#38bdf8" : (s.pct > 0 ? "#93c5fd" : "#cbd5e1"));
+        return `<div class="stage-item">
+            <div class="prog-head"><span>${s.name}</span><span class="bc-pct">${s.pct}%</span></div>
+            <div class="progress-wrap"><div class="progress-fill" style="width:${s.pct}%;background:${fillColor};"></div></div>
+            <div class="prog-desc">${s.desc}</div>
+        </div>`;
+    }).join("");
+}
+
+function cfSeedLog() {
+    const el = document.getElementById("cfLog");
+    if (!el) return;
+    const lines = [
+        ["2026-09-13 12:13:35", "INFO", "流水线调度器启动，当前活跃任务数：5"],
+        ["2026-09-13 12:13:28", "INFO", "TASK-20260913-001 餐饮订单去重与缺失值填充 进度更新至 68%"],
+        ["2026-09-13 12:13:20", "INFO", "TASK-20260913-008 餐饮门店地理编码补全 进度更新至 81%"],
+        ["2026-09-13 12:13:12", "WARN", "TASK-20260913-002 旅游评论字段对齐与标准化 发现 37 条评分字段超出有效范围，已标记待复核"],
+        ["2026-09-13 12:13:05", "INFO", "TASK-20260913-011 零售交易金额缺失值填充 进度更新至 57%"],
+        ["2026-09-13 12:12:58", "INFO", "TASK-20260913-016 消费异常检测特征准备 进度更新至 44%"],
+        ["2026-09-13 12:12:46", "ERROR", "TASK-20260913-006 旅游订单金额异常值处理 因源表字段类型不一致暂停，等待人工确认"],
+        ["2026-09-13 12:12:35", "INFO", "TASK-20260913-004 餐饮评论情感标签补充 已完成，输出 64200 条"],
+        ["2026-09-13 12:12:22", "INFO", "TASK-20260913-010 评论主题关键词提取 已完成，输出 85940 条"],
+        ["2026-09-13 12:12:10", "WARN", "TASK-20260913-014 餐饮菜品名称映射 发现 126 条菜品名称无法匹配标准类目，已记录待处理"],
+        ["2026-09-13 12:11:58", "INFO", "TASK-20260913-012 旅游景点名称标准化 已完成，输出 11980 条"],
+        ["2026-09-13 12:11:45", "INFO", "TASK-20260913-005 用户主数据去重合并 已完成，输出 43870 条"],
+        ["2026-09-13 12:11:30", "INFO", "数据接入阶段完成，三源合计 412300 条记录进入清洗队列"],
+        ["2026-09-13 12:11:18", "INFO", "TASK-20260913-003 零售交易多源融合 已加入排队，等待前置清洗任务完成"],
+        ["2026-09-13 12:11:05", "INFO", "TASK-20260913-007 零售商品类目映射 已加入排队，等待前置清洗任务完成"],
+        ["2026-09-13 12:10:52", "INFO", "TASK-20260913-009 多源消费记录时间对齐 已加入排队，等待前置清洗任务完成"],
+        ["2026-09-13 12:10:40", "INFO", "TASK-20260913-013 用户消费频次特征计算 已加入排队，等待前置清洗任务完成"],
+    ];
+    el.innerHTML = lines.map(l => `<div class="log-line ${l[1]}"><span class="ts">${l[0]}</span> [${l[1]}] ${esc(l[2])}</div>`).join("");
+}
+
+function cfAppendLog(level, msg) {
+    const el = document.getElementById("cfLog");
+    if (!el) return;
+    const now = new Date();
+    const ts = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0")
+        + " " + String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0") + ":" + String(now.getSeconds()).padStart(2, "0");
+    el.insertAdjacentHTML("beforeend", `<div class="log-line ${level}"><span class="ts">${ts}</span> [${level}] ${esc(msg)}</div>`);
+    el.scrollTop = el.scrollHeight;
+}
+
+function cfClearLog() {
+    const el = document.getElementById("cfLog");
+    if (el) el.innerHTML = "";
+}
+
+function cleanSrcTgt(t) {
+    const k = t.task_kind || "";
+    if (k.includes("sentiment")) return { src: "餐饮评论表", tgt: "评论情感标签表" };
+    if (k.includes("forecast")) return { src: "餐饮订单表 + 零售交易表", tgt: "消费预测宽表" };
+    if (k.includes("rfm")) return { src: "消费记录表 + 用户维表", tgt: "RFM 分层宽表" };
+    if (k.includes("review")) return { src: "旅游评论表", tgt: "评论标准表" };
+    if (k.includes("retail") || k.includes("fusion")) return { src: "零售交易表 + 门店维表", tgt: "零售融合宽表" };
+    return { src: "餐饮订单表", tgt: "清洗后订单宽表" };
+}
+
+async function loadCleaningTasks() {
+    try {
+        const res = await pywebview.api.list_cleaning_tasks("", 50);
+        const rows = document.getElementById("cfRows");
+        if (!res || !res.success) {
+            rows.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#b91c1c;">查询失败：${esc(res && res.reason)}</td></tr>`;
+            return;
+        }
+        const list = res.tasks || [];
+        cfTaskCache = list;
+        if (list.length === 0) {
+            rows.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#94a3b8;">暂无任务，点击「新建记录」录入清洗或融合任务</td></tr>`;
+            return;
+        }
+        rows.innerHTML = list.map(t => {
+            const pct = t.progress_percent != null ? Number(t.progress_percent) : 0;
+            const st = cleanSrcTgt(t);
+            return `<tr>
+                <td><div class="cf-name">${esc(t.task_name || t.pipeline_task_identifier)}</div>
+                    <div class="cf-src">来源: ${esc(st.src)} / 目标: ${esc(st.tgt)}</div></td>
+                <td>${statusBadge(t.task_status)}</td>
+                <td><div class="progress-wrap" style="width:110px"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, pct))}%"></div></div> ${pct}%</td>
+                <td>
+                    <button class="btn-link danger" onclick="doDeleteCleaningTask(this.dataset.id)" data-id="${esc(t.pipeline_task_identifier)}">删除记录</button>
+                    <button class="btn-link" onclick="showCleaningDetail(this.dataset.id)" data-id="${esc(t.pipeline_task_identifier)}">查看详情</button>
+                    <button class="btn-link" onclick="doRunCleaningTask(this.dataset.id)" data-id="${esc(t.pipeline_task_identifier)}">执行任务</button>
+                </td>
+            </tr>`;
+        }).join("");
+    } catch (e) {
+        const rows = document.getElementById("cfRows");
+        if (rows) rows.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#b91c1c;">加载失败：${esc(e)}</td></tr>`;
+    }
+}
+
+async function doRunCleaningTask(id) {
+    const t = cfTaskCache.find(x => x.pipeline_task_identifier === id);
+    if (!t) { alert("未找到任务"); return; }
+    const taskId = cleaningTaskIdFor(t.task_kind || "");
+    cfAppendLog("INFO", "调度器分发 " + taskId + "（" + t.task_name + "） …");
+    try {
+        const payload = taskId === "run_task_cleaning_fusion_pipeline_5"
+            ? { pipeline_id: id, pipeline_task_identifier: id, forecast_window_days: 30 }
+            : { pipeline_id: id, pipeline_task_identifier: id };
+        const res = await pywebview.api.run_task(taskId, payload, token);
+        if (res && res.success) {
+            cfAppendLog("INFO", "TASK " + id + " " + (t.task_name || "") + " 执行完成：记录=" + (res.aligned_record_count ?? res.record_count ?? "-"));
+        } else {
+            cfAppendLog("ERROR", "TASK " + id + " 执行失败：" + (res && res.reason ? res.reason : JSON.stringify(res)));
+        }
+        loadCleaningTasks();
+    } catch (e) {
+        cfAppendLog("ERROR", "TASK " + id + " 执行异常：" + e);
+    }
+}
+
+function cleaningTaskIdFor(kind) {
+    if (kind === "consumption_forecast_anomaly") return "run_task_cleaning_fusion_pipeline_5";
+    if (kind === "sentiment_topic_preparation") return "run_task_cleaning_fusion_pipeline_15";
+    return "run_task_cleaning_fusion_pipeline_9";
+}
+
+function openNewCleanModal() {
+    const m = document.getElementById("newCleanModal");
+    if (m) { m.classList.add("open"); }
+    else { alert("弹窗元素不存在：newCleanModal"); }
+}
+function closeNewCleanModal() {
+    const m = document.getElementById("newCleanModal");
+    if (m) m.classList.remove("open");
+}
+
+async function doNewCleaningTask() {
+    const name = document.getElementById("cfT2").value.trim();
+    const kind = document.getElementById("cfSub2").value;
+    const status = document.getElementById("cfStatus2").value;
+    const progress = Number(document.getElementById("cfProg2").value || 0);
+    const pri = document.getElementById("cfPri2").value;
+    const subm = document.getElementById("cfSubm2").value.trim() || "数据工程组";
+    const op = document.getElementById("cfOp2").value.trim() || "admin";
+    const payload = document.getElementById("cfPayload2").value.trim();
+    const meta = document.getElementById("cfMeta2").value.trim();
+    if (!name) { alert("请填写 title（任务名称）"); return; }
+    try {
+        const res = await pywebview.api.create_cleaning_task(name, kind, "all_sources", status, progress, pri, subm, op, payload, meta);
+        alert(JSON.stringify(res));
+        closeNewCleanModal();
+        loadCleaningTasks();
+    } catch (e) { alert("新建失败：" + e); }
+}
+
+let cleanDelTargetId = "";
+
+async function doDeleteCleaningTask(id) {
+    const t = cfTaskCache.find(x => x.pipeline_task_identifier === id);
+    cleanDelTargetId = id;
+    const label = t ? (t.task_name || id) : id;
+    const lb = document.getElementById("cleanDelLabel");
+    if (lb) lb.textContent = label;
+    const m = document.getElementById("cleanDelModal");
+    if (m) m.classList.add("open");
+}
+function closeCleanDeleteModal() {
+    const m = document.getElementById("cleanDelModal");
+    if (m) m.classList.remove("open");
+}
+async function confirmCleanDelete() {
+    const realId = cleanDelTargetId;
+    cleanDelTargetId = "";
+    closeCleanDeleteModal();
+    try {
+        const res = await pywebview.api.delete_cleaning_task(realId);
+        alert(JSON.stringify(res));
+        loadCleaningTasks();
+    } catch (e) { alert("删除失败：" + e); }
+}
+
+function closeCleanDrawer() { const b = document.getElementById("cleanDetailDrawer"); if (b) b.classList.remove("open"); }
+
+async function showCleaningDetail(id) {
+    const body = document.getElementById("cleanDrawerBody");
+    if (body) body.innerHTML = "加载中……";
+    try {
+        const res = await pywebview.api.get_cleaning_task_detail(id);
+        const drawer = document.getElementById("cleanDetailDrawer");
+        if (!res || !res.success) {
+            if (body) body.innerHTML = `<div style="color:#b91c1c;">加载失败：${esc(res && res.reason)}</div>`;
+            return;
+        }
+        const t = res.task;
+        const pct = t.progress_percent != null ? Number(t.progress_percent) : 0;
+        const st = cleanSrcTgt(t);
+        let summaryTxt = "-";
+        let priMeta = "", submMeta = "", opMeta = "";
+        if (t.execution_summary) {
+            let summary = null;
+            try { summary = typeof t.execution_summary === "string" ? JSON.parse(t.execution_summary) : t.execution_summary; } catch (e) { summary = null; }
+            if (summary && typeof summary === "object" && Object.keys(summary).length > 0) {
+                summaryTxt = JSON.stringify(summary);
+                priMeta = summary.priority || "";
+                submMeta = summary.submitter || "";
+                opMeta = summary.operator || "";
+            }
+        }
+        const pri = priMeta || (pct >= 50 ? "高" : (pct > 0 ? "中" : "低"));
+        const subb = submMeta || "数据工程组";
+        const opr = opMeta || "admin";
+        if (body) body.innerHTML = `
+            <div style="font-size:13px;color:#64748b;margin-bottom:12px;">当前记录 ${esc(t.pipeline_task_identifier || ("#" + id))}</div>
+            <div class="drv-field"><span>title</span><b>${esc(t.task_name || t.pipeline_task_identifier)}</b></div>
+            <div class="drv-field"><span>subtitle</span><b>来源: ${esc(st.src)} / 目标: ${esc(st.tgt)}</b></div>
+            <div class="drv-field"><span>status</span><b>${statusBadge(t.task_status)}</b></div>
+            <div class="drv-field"><span>progress</span><b>${pct}</b></div>
+            <div class="drv-field"><span>priority</span><b>${esc(pri)}</b></div>
+            <div class="drv-field"><span>submitter</span><b>${esc(subb)}</b></div>
+            <div class="drv-field"><span>operator</span><b>${esc(opr)}</b></div>
+            <div class="drv-field"><span>详情真源载荷</span><b style="word-break:break-all;">${esc(summaryTxt)}</b></div>
+            <div class="drv-field"><span>meta_primary</span><b>${esc(t.task_kind || "-")}</b></div>`;
+        if (drawer) drawer.classList.add("open");
+    } catch (e) {
+        if (body) body.innerHTML = `<div style="color:#b91c1c;">加载失败：${esc(e)}</div>`;
+    }
+}
+
+/* ============ 第2章 多源数据接入台 ============ */
+const STATUS_TEXT = { pending: "排队中", queued: "排队中", running: "运行中", processing: "预处理中", paused: "已暂停", succeeded: "已完成", completed: "已完成", active: "已接入", failed: "失败",
+    "排队中": "排队中", "预处理中": "预处理中", "已完成": "已完成", "已接入": "已接入", "失败": "失败" };
+const STATUS_PCT = { pending: 10, queued: 10, running: 55, processing: 55, paused: 0, succeeded: 100, completed: 100, active: 100, failed: 0,
+    "排队中": 10, "预处理中": 50, "已完成": 100, "已接入": 10, "失败": 0 };
+const STAGE_DESC = {
+    pending: "排队中·等待前序批次释放解析资源，预计4分钟后开始处理",
+    queued: "排队中·等待前序批次释放解析资源，预计4分钟后开始处理",
+    processing: "解析中·正在解析订单明细字段，已完成门店编码与支付方式映射",
+    checking: "格式校验·校验票种编码与入园时间格式，发现12条时间字段异常待修正",
+    completed: "已完成·批次解析与格式校验全部通过，等待清洗融合消费",
+    succeeded: "已完成·批次解析与格式校验全部通过，等待清洗融合消费",
+    active: "已接入·数据源登记完成，等待批次数据提交",
+    failed: "失败·请点击查看详情中的错误摘要定位原因",
+    "排队中": "排队中·等待前序批次释放解析资源，预计4分钟后开始处理",
+    "预处理中": "解析中·正在解析订单明细字段，已完成门店编码与支付方式映射",
+    "已完成": "已完成·批次解析与格式校验全部通过，等待清洗融合消费",
+    "已接入": "已接入·数据源登记完成，等待批次数据提交",
+    "失败": "失败·请点击查看详情中的错误摘要定位原因",
+};
+
+function statusBadge(s, pct) {
+    let key = STATUS_TEXT[s] ? s : "queued";
+    let text = STATUS_TEXT[key] || s;
+    if (s === "processing") {
+        const p = Number(pct);
+        if (p > 0 && p < 55) { key = "checking"; text = "格式校验"; }
+        else { key = "processing"; text = "预处理中"; }
+    }
+    return `<span class="status-badge ${key}">${text}</span>`;
+}
+
+function stageDesc(s, pct) {
+    if (s === "processing") {
+        const p = Number(pct);
+        if (p > 0 && p < 55) return STAGE_DESC.checking;
+        return STAGE_DESC.processing;
+    }
+    return STAGE_DESC[s] || ("状态: " + s);
+}
+
+function shortCh(ch) {
+    const s = ch || "";
+    if (s.includes("旅游")) return "旅游";
+    if (s.includes("零售")) return "零售";
+    if (s.includes("餐饮")) return "餐饮";
+    return s;
+}
+
+function pathFor(r) {
+    if (r.endpoint_uri) return r.endpoint_uri;
+    const ch = r.source_channel || r.source_name || "";
+    const key = ch.includes("旅游") ? "tourism" : (ch.includes("零售") ? "retail" : "catering");
+    const t = r.created_at ? String(r.created_at) : "";
+    const d = (t.match(/\d{4}-\d{2}-\d{2}/) || [""])[0].replace(/-/g, "");
+    return "/data/ingest/" + key + "/" + (d || "00000000") + "/";
+}
+
+function fmtTime(v) {
+    if (!v) return "-";
+    const s = String(v);
+    if (s.includes("T")) {
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) return d.toLocaleString("zh-CN", { hour12: false });
+    }
+    return s;
+}
+
+function renderIngestion(content) {
+    content.innerHTML = `
+        <div class="ing-grid">
+            <div class="ing-left">
+                <div class="panel">
+                    <div class="panel-head"><h2>数据文件导入</h2><button class="btn-ghost" onclick="pickFilesAndIngest()">导入数据</button></div>
+                    <div class="sub">本区域接收餐饮、旅游、零售三类数据文件；点击「导入数据」按钮，或把文件拖进虚线框，系统随即登记来源类型和批次信息。</div>
+                    <div class="import-drop" id="importDrop"
+                         ondragover="event.preventDefault();this.classList.add('drag-over');"
+                         ondragleave="this.classList.remove('drag-over');"
+                         ondrop="event.preventDefault();this.classList.remove('drag-over');">
+                        <div class="drop-hint">📥 拖拽文件到此处，或点击「导入数据」按钮导入<br><small>支持 .csv / .xlsx / .xls / .json / .zip</small></div>
+                    </div>
+                    <div class="block-title">最近导入</div>
+                    <div class="recent-list" id="ingRecent"><div style="color:#94a3b8;font-size:13px;">加载中……</div></div>
+                </div>
+            </div>
+            <div class="panel">
+                <h2>导入批次清单</h2>
+                <div class="sub">浏览已导入的数据文件与批次记录，支持按来源筛选和批次检查。</div>
+                <div class="list-actions">
+                    <button class="btn-ghost" onclick="loadIngestionAll()">刷新列表</button>
+                    <button class="btn-ghost" id="batchDelBtn" onclick="openBatchDelete()" style="display:none;">批量删除</button>
+                    <button class="btn-ghost" onclick="openNewRecord()">新建记录</button>
+                </div>
+                <div class="batch-cards" id="ingCards"><div style="color:#94a3b8;font-size:13px;">加载中……</div></div>
+            </div>
+        </div>
+        <div class="panel">
+            <h2>导入预处理进度</h2>
+            <div class="sub">反馈当前批次文件解析、格式校验与预处理排队阶段状态。</div>
+            <div id="ingProgress"><div style="color:#94a3b8;">加载中……</div></div>
+        </div>
+        <div class="statusbar">
+            <span>状态：多源数据接入台 已加载，共 <b id="sbTotal">-</b> 条记录</span>
+            <span>当前批次 <b id="sbCurrent">-</b></span>
+            <span id="sbTime"></span>
+        </div>
+        <div class="modal-overlay" id="importModal" onclick="if(event.target===this)closeImportModal()">
+            <div class="modal">
+                <h3>导入数据</h3>
+                <div class="m-sub">请选择要导入的数据文件来源与格式，系统随即自动识别并登记来源类型与批次信息。</div>
+                <div class="mini-form">
+                    <div><label>来源类型</label>
+                        <select id="impChannel">
+                            <option>餐饮订单流水</option>
+                            <option>旅游门票消费</option>
+                            <option>零售POS交易</option>
+                        </select>
+                    </div>
+                    <div><label>文件格式</label>
+                        <select id="impExt">
+                            <option value="csv">.csv</option>
+                            <option value="xlsx">.xlsx</option>
+                            <option value="zip">.zip</option>
+                            <option value="json">.json</option>
+                            <option value="xls">.xls</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="m-actions">
+                    <button class="btn-ghost" onclick="closeImportModal()">取消</button>
+                    <button class="btn-ghost" onclick="chooseImport()">开始导入</button>
+                </div>
+            </div>
+        </div>
+        <div class="drawer-overlay" id="detailDrawer" onclick="if(event.target===this)closeDrawer()">
+            <div class="drawer">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-size:15px;font-weight:700;">查看详情</span>
+                    <button class="btn-link" onclick="closeDrawer()">关闭</button>
+                </div>
+                <div id="drawerBody" style="margin-top:14px;">加载中……</div>
+            </div>
+        </div>
+        <div class="modal-overlay" id="delModal" onclick="if(event.target===this)closeDeleteRecord()">
+            <div class="modal">
+                <h3>删除记录</h3>
+                <div class="m-sub">即将删除记录 <b id="delLabel"></b>，该操作不可撤销。</div>
+                <div class="m-actions">
+                    <button class="btn-ghost" onclick="closeDeleteRecord()">取消</button>
+                    <button class="btn-ghost danger-ghost" onclick="confirmDeleteRecord()">确认删除</button>
+                </div>
+            </div>
+        </div>
+        <div class="modal-overlay" id="newModal" onclick="if(event.target===this)closeNewRecord()">
+            <div class="modal modal-wide">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <h3 style="margin:0;">新建记录</h3>
+                    <button class="btn-link" onclick="closeNewRecord()">关闭</button>
+                </div>
+                <div class="m-sub" style="margin-top:6px;">请填写动作所需字段。</div>
+                <div class="mini-form two-col">
+                    <div><label>title（标题）</label><input id="srcName" placeholder="如：餐饮订单流水"></div>
+                    <div><label>subtitle（副标题 / 来源类型）</label>
+                        <select id="srcType">
+                            <option value="file">file（文件）</option>
+                            <option value="api">api（接口）</option>
+                            <option value="database">database（数据库）</option>
+                            <option value="stream">stream（流式）</option>
+                            <option value="manual">manual（手工）</option>
+                        </select>
+                    </div>
+                    <div><label>status（状态）</label>
+                        <select id="srcStatus">
+                            <option value="pending">排队中</option>
+                            <option value="processing">预处理中</option>
+                            <option value="completed">已完成</option>
+                            <option value="active">已接入</option>
+                        </select>
+                    </div>
+                    <div><label>progress（进度）</label><input id="srcProgress" type="number" min="0" max="100" value="10"></div>
+                    <div><label>import_time（导入时间）</label><input id="srcTime" placeholder="如：2026-10-11 10:00:00"></div>
+                    <div><label>operator（操作人）</label><input id="srcOperator" placeholder="如：admin"></div>
+                    <div><label>term_count（记录条数）</label><input id="srcTerm" type="number" min="0" value="0"></div>
+                    <div><label>详情真源载荷</label><textarea id="srcPayload" rows="3" placeholder='{"records":[...]}'></textarea></div>
+                    <div><label>meta_primary（元数据一）</label><input id="srcMeta1" placeholder="如：来源批次号"></div>
+                    <div><label>meta_secondary（元数据二）</label><input id="srcMeta2" placeholder="如：负责人"></div>
+                </div>
+                <div class="m-actions">
+                    <button class="btn-ghost" onclick="closeNewRecord()">取消</button>
+                    <button class="btn-ghost" onclick="doRegisterSource()">提交</button>
+                </div>
+            </div>
+        </div>`;
+    loadIngestionAll();
+}
+async function loadIngestionAll() {
+    loadIngestionOverview();
+    loadIngestionRecords();
+}
+
+async function loadIngestionOverview() {
+    try {
+        const res = await pywebview.api.get_ingestion_overview();
+        if (!res || !res.success) { return; }
+        const d = res.data || {};
+        const t = document.getElementById("sbTotal");
+        if (t) t.textContent = d.total_records ?? "-";
+        const c = document.getElementById("sbCurrent");
+        if (c) c.textContent = d.status_breakdown && d.status_breakdown.completed ? ("已完成 " + d.status_breakdown.completed.count + " 条") : "加载中";
+        const tm = document.getElementById("sbTime");
+        if (tm) tm.textContent = new Date().toLocaleString("zh-CN", { hour12: false });
+    } catch (e) { console.error(e); }
+}
+
+async function loadIngestionRecords() {
+    try {
+        const res = await pywebview.api.list_ingestion_records(50);
+        const cards = document.getElementById("ingCards");
+        const prog = document.getElementById("ingProgress");
+        const recent = document.getElementById("ingRecent");
+        if (!res || !res.success) {
+            if (cards) cards.innerHTML = `<div style="color:#b91c1c;font-size:13px;">查询失败：${esc(res && res.reason)}</div>`;
+            return;
+        }
+        const list = res.records || [];
+        if (list.length === 0) {
+            if (cards) cards.innerHTML = `<div style="color:#94a3b8;font-size:13px;">暂无导入批次，点击上方「导入」按钮体验</div>`;
+            if (prog) prog.innerHTML = `<div style="color:#94a3b8;">暂无处理中的批次</div>`;
+            return;
+        }
+        if (cards) cards.innerHTML = list.map(r => {
+            const pct = (r.progress != null && r.progress !== "" && Number(r.progress) > 0) ? Number(r.progress) : (STATUS_PCT[r.status] || 0);
+            return `<div class="batch-card">
+                <label class="bc-check" title="勾选后可批量删除"><input type="checkbox" class="ing-check" value="${r.id}" onchange="updateBatchDelete()"></label>
+                <div class="bc-main">
+                    <div class="bc-name">${esc(fileNameFor(r))}</div>
+                    <div class="bc-sub">来源: ${esc(shortCh(r.source_channel || r.source_name))} / 路径: ${esc(pathFor(r))}</div>
+                    <div class="bc-meta">${statusBadge(r.status, pct)} <span class="bc-pct">${pct}</span> <span class="bc-time">${fmtTime(r.created_at)}</span></div>
+                </div>
+                <div class="bc-actions">
+                    <button class="btn-link danger" onclick="openDeleteRecord(${r.id}, '${esc(r.batch_identifier || r.source_channel)}')">删除记录</button>
+                    <button class="btn-link" onclick="showIngestionDetail(${r.id})">查看详情</button>
+                </div>
+            </div>`;
+        }).join("");
+        if (prog) prog.innerHTML = list.map(r => {
+            const pct = (r.progress != null && r.progress !== "" && Number(r.progress) > 0) ? Number(r.progress) : (STATUS_PCT[r.status] || 0);
+            return `<div class="prog-item">
+                <div class="prog-head"><span>${esc(fileNameFor(r))}</span><span class="bc-pct">${pct}%</span></div>
+                <div class="progress-wrap"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, pct))}%"></div></div>
+                <div class="prog-desc">${esc(stageDesc(r.status, pct))}</div>
+            </div>`;
+        }).join("");
+        if (recent) recent.innerHTML = list.map(r =>
+            `<div class="recent-item"><span>${esc(fileNameFor(r))}</span><span class="bc-time">${fmtTime(r.created_at)}</span></div>`
+        ).join("");
+        updateBatchDelete();
+    } catch (e) {
+        const cards = document.getElementById("ingCards");
+        if (cards) cards.innerHTML = `<div style="color:#b91c1c;font-size:13px;">加载失败：${esc(e)}</div>`;
+        updateBatchDelete();
+    }
+}
+
+function openImportModal() { const m = document.getElementById("importModal"); if (m) m.classList.add("open"); }
+function closeImportModal() { const m = document.getElementById("importModal"); if (m) m.classList.remove("open"); }
+async function pickFilesAndIngest() {
+    try {
+        const res = await pywebview.api.pick_files_and_ingest();
+        if (!res) { return; }
+        if (res.success) {
+            alert("✅ " + (res.summary || "导入成功"));
+        } else {
+            alert("⚠️ " + (res.reason || "已取消"));
+        }
+        loadIngestionAll();
+    } catch (e) { alert("选择文件失败：" + e); }
+}
+
+async function chooseImport() {
+    const ch = document.getElementById("impChannel") ? document.getElementById("impChannel").value : "餐饮订单流水";
+    const ext = document.getElementById("impExt") ? document.getElementById("impExt").value : "csv";
+    closeImportModal();
+    await doImport(ch, ext);
+}
+function fileExtFor(ch) {
+    const s = ch || "";
+    if (s.includes("零售")) return "json";
+    if (s.includes("旅游")) return "json";
+    return "csv";
+}
+function fileNameFor(r) {
+    let recorded = null;
+    if (r.payload_json) {
+        try { recorded = JSON.parse(r.payload_json); } catch (e) { recorded = null; }
+    }
+    if (recorded && recorded.file_name) return recorded.file_name;
+    const ch = r.source_channel || r.source_name || r.batch_identifier || ("#" + r.id);
+    const bid = r.batch_identifier || "";
+    const tail = bid.length > 6 ? bid.slice(-6) : bid;
+    const ext = (recorded && recorded.file_ext) ? recorded.file_ext : fileExtFor(ch);
+    return ch + (tail ? "_" + tail : "") + "." + ext;
+}
+
+async function doImport(sourceType, fileExt) {
+    try {
+        const res = await pywebview.api.import_demo_batch(sourceType, token, fileExt || "");
+        if (res && res.permitted === false) {
+            alert("无权限或会话已过期，请重新登录后重试");
+            return;
+        }
+        alert(JSON.stringify(res));
+        loadIngestionAll();
+    } catch (e) { alert("导入失败：" + e); }
+}
+
+async function showIngestionDetail(id) {
+    const box = document.getElementById("detailDrawer");
+    if (box) box.classList.add("open");
+    const body = document.getElementById("drawerBody");
+    if (body) body.innerHTML = "<div style='color:#94a3b8;'>加载中……</div>";
+    try {
+        const res = await pywebview.api.get_ingestion_record_detail(id);
+        if (!res || !res.success) { if (body) body.innerHTML = "<div style='color:#b91c1c;'>" + esc(res && res.reason) + "</div>"; return; }
+        const r = res.record;
+        const pct = (r.progress != null && r.progress !== "" && Number(r.progress) > 0) ? Number(r.progress) : (STATUS_PCT[r.status] || 0);
+        if (body) body.innerHTML = `
+            <div class="drv-title">当前记录 ${esc(r.batch_identifier || ("#" + r.id))}</div>
+            <div class="drv-field"><span>title</span><b>${esc(fileNameFor(r))}</b></div>
+            <div class="drv-field"><span>subtitle</span><b>来源: ${esc(shortCh(r.source_channel || r.source_name))} / 路径: ${esc(pathFor(r))}</b></div>
+            <div class="drv-field"><span>status</span><b>${statusBadge(r.status, pct)}</b></div>
+            <div class="drv-field"><span>progress</span><b>${pct}%</b></div>
+            <div class="drv-field"><span>import_time</span><b>${fmtTime(r.created_at)}</b></div>
+            <div class="drv-field"><span>operator</span><b>${esc(r.operator || "-")}</b></div>
+            <div class="drv-field"><span>term_count</span><b>${r.term_count ?? 0}</b></div>
+            <div class="drv-field"><span>详情真源载荷</span><b style="white-space:pre-wrap;word-break:break-all;font-family:Consolas,monospace;font-size:12px;">${esc(r.payload_json || "{}")}</b></div>
+            <div class="drv-field"><span>meta_primary</span><b>${fmtTime(r.created_at)}</b></div>
+            <div class="drv-field"><span>meta_secondary</span><b>${esc(r.operator || "-")}</b></div>`;
+    } catch (e) { if (body) body.innerHTML = "<div style='color:#b91c1c;'>加载失败：" + esc(e) + "</div>"; }
+}
+
+function closeDrawer() { const b = document.getElementById("detailDrawer"); if (b) b.classList.remove("open"); }
+
+let deleteTargetId = null;
+let batchTargetIds = [];
+function updateBatchDelete() {
+    const checks = document.querySelectorAll(".ing-check:checked");
+    const btn = document.getElementById("batchDelBtn");
+    if (btn) {
+        btn.style.display = checks.length ? "inline-block" : "none";
+        btn.textContent = "批量删除(" + checks.length + ")";
+    }
+}
+function openBatchDelete() {
+    batchTargetIds = Array.from(document.querySelectorAll(".ing-check:checked")).map(c => Number(c.value));
+    if (!batchTargetIds.length) { alert("请先勾选要删除的记录"); return; }
+    const l = document.getElementById("delLabel");
+    if (l) l.textContent = "选中的 " + batchTargetIds.length + " 条记录";
+    document.getElementById("delModal").classList.add("open");
+}
+function openDeleteRecord(id, label) {
+    deleteTargetId = id;
+    const l = document.getElementById("delLabel");
+    if (l) l.textContent = label || ("#" + id);
+    document.getElementById("delModal").classList.add("open");
+}
+function closeDeleteRecord() {
+    deleteTargetId = null;
+    batchTargetIds = [];
+    document.getElementById("delModal").classList.remove("open");
+}
+async function confirmDeleteRecord() {
+    try {
+        if (batchTargetIds.length) {
+            const res = await pywebview.api.delete_ingestion_records(batchTargetIds, token);
+            alert(JSON.stringify(res));
+            batchTargetIds = [];
+        } else if (deleteTargetId != null) {
+            const res = await pywebview.api.delete_ingestion_record(deleteTargetId, token);
+            alert(JSON.stringify(res));
+        }
+    } catch (e) { alert("删除失败：" + e); }
+    deleteTargetId = null;
+    closeDeleteRecord();
+    loadIngestionAll();
+}
+
+function openNewRecord() { document.getElementById("newModal").classList.add("open"); }
+function closeNewRecord() { document.getElementById("newModal").classList.remove("open"); }
+
+async function doRegisterSource() {
+    const name = document.getElementById("srcName").value.trim();
+    const type = document.getElementById("srcType").value;
+    const status = document.getElementById("srcStatus").value;
+    const progress = Number(document.getElementById("srcProgress").value || 10);
+    const op = document.getElementById("srcOperator").value.trim() || "admin";
+    const term = Number(document.getElementById("srcTerm").value || 0);
+    const time = document.getElementById("srcTime").value.trim();
+    const payload = document.getElementById("srcPayload").value.trim();
+    const meta1 = document.getElementById("srcMeta1").value.trim();
+    const meta2 = document.getElementById("srcMeta2").value.trim();
+    if (!name) { alert("请填写 title（标题）"); return; }
+    if ((type === "api" || type === "stream") && !payload.includes("endpoint")) {
+        alert("api/stream 类型请在「详情真源载荷」中填写 endpoint 信息");
+        return;
+    }
+    try {
+        const res = await pywebview.api.register_source(name, type, "", token, status, progress, op, term, payload, time, meta1, meta2);
+        alert(JSON.stringify(res));
+        closeNewRecord();
+        loadIngestionAll();
+    } catch (e) { alert("登记失败：" + e); }
+}
+
+/* ============ 通用执行确认弹窗 ============ */
+let execCb = null;
+function openExecModal(title, msg, cb) {
+    document.getElementById("execTitle").textContent = title || "执行任务";
+    document.getElementById("execMsg").textContent = msg || "确认执行？执行后将进入任务队列并刷新相关面板。";
+    execCb = cb || function () {};
+    document.getElementById("execModal").classList.add("open");
+}
+function closeExecModal() {
+    document.getElementById("execModal").classList.remove("open");
+    execCb = null;
+}
+function confirmExecModal() {
+    const cb = execCb;
+    closeExecModal();
+    try { cb && cb(); } catch (e) {}
+    alert("任务已提交进入队列");
+}
+
+/* ============ 第4章 评论情感与主题挖掘 ============ */
+function renderSentiment(content) {
+    content.innerHTML = `
+    <div class="ing-grid">
+        <div class="panel">
+            <div class="panel-head"><h2>挖掘参数配置</h2><div class="panel-btns"><button class="btn-ghost" onclick="openExecModal('挖掘参数配置', '情感分析模型 BERT-wwm-ext、主题数量 8、主题模型 LDA 吉布斯采样，确认后开始执行挖掘任务？')">执行</button></div></div>
+            <div class="sub">设置分析条件、主题数量、停用词与结果输出格式。</div>
+            <div class="mini-form two-col">
+                <div><label>情感分析模型</label><select><option>BERT-wwm-ext 中文情感分类</option><option>RoBERTa-wwm-ext</option><option>SnowNLP 规则基线</option><option>LSTM 融合模型</option></select></div>
+                <div><label>主题数量</label><input type="number" value="8"></div>
+                <div><label>主题模型</label><select><option>LDA 吉布斯采样</option><option>BTM 短文本主题模型</option><option>NMF 非负矩阵分解</option><option>BERTopic 嵌入聚类</option></select></div>
+                <div><label>数据来源</label><select><option>餐饮 + 旅游 + 零售 融合评论集</option></select></div>
+                <div><label>数据时间范围</label><input value="2026-08-14 至 2026-09-13"></div>
+                <div><label>最短评论长度</label><input type="number" value="5"></div>
+                <div><label>停用词表</label><input value="stopwords_zh_consumer_v3.txt"></div>
+                <div><label>自定义停用词</label><input value="区内一般、聚合、抵现等"></div>
+                <div><label>负面情感增强识别</label><input type="number" value="1"></div>
+                <div><label>情感置信度阈值</label><input type="number" step="0.01" value="0.65"></div>
+                <div><label>批处理条数</label><input type="number" value="512"></div>
+                <div><label>结果输出格式</label><select><option>JSON + CSV 双格式</option><option>仅 JSON</option><option>仅 CSV</option></select></div>
+            </div>
+            <button class="btn-ghost" onclick="tip('已打开离线数据源目录')">离线查看数据源</button>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head"><h2>情感与主题结论摘要</h2></div>
+            <div class="sub">汇总维度统计分布、高频主题与代表性负面评论结论。</div>
+            <div class="kpi-row cols3">
+                <div class="kpi"><div class="num">124,419 条</div><div class="lbl">有效评论总数</div></div>
+                <div class="kpi"><div class="num">62.4%</div><div class="lbl">正面情感占比</div></div>
+                <div class="kpi"><div class="num">22.4%</div><div class="lbl">中性情感占比</div></div>
+                <div class="kpi"><div class="num">15.2%</div><div class="lbl">负面情感占比</div></div>
+                <div class="kpi"><div class="num">8</div><div class="lbl">识别主题数量</div></div>
+                <div class="kpi"><div class="num">0.71</div><div class="lbl">主题平均一致性</div></div>
+                <div class="kpi"><div class="num warn">+2.1%</div><div class="lbl">负面评论环比变化</div></div>
+                <div class="kpi"><div class="num">4 分 12 秒</div><div class="lbl">分析耗时</div></div>
+            </div>
+            <div class="divider-note">
+                <b>整体情感极性结论：</b>正面为主（62.4%），餐饮门店服务与口味获集中好评。<br>
+                <b>高频主题结论：</b>性价比、服务态度、环境口味、位置停车四类主题讨论度最高。<br>
+                <b>代表性负面评论：</b>"排队 1 小时才入座，上菜慢"类评论环比上升 2.1%，已记录待复核。<br>
+                <b>主题时间趋势结论：</b>周末时段"环境口味"主题讨论量环比上升 12%。<br>
+                <b>模型质量说明：</b>主题一致性 0.71，达到 0.65 合格线，结果可信。
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-head"><h2>情感与主题可视化</h2></div>
+        <div class="sub">三维柱状形式展示情感占比、主题分布与时间趋势的交叉情况。</div>
+        <div class="chart-dark">
+            <div class="map-title">情感 × 主题 × 时间 三维分布</div>
+            <div style="height:150px;display:flex;align-items:flex-end;justify-content:space-around;padding:10px 30px 0 60px;">
+                <div style="width:46px;height:60px;background:#0e7490;border-radius:4px 4px 0 0;"></div>
+                <div style="width:46px;height:110px;background:#0891b2;border-radius:4px 4px 0 0;"></div>
+                <div style="width:46px;height:80px;background:#38bdf8;border-radius:4px 4px 0 0;"></div>
+                <div style="width:46px;height:46px;background:#7dd3fc;border-radius:4px 4px 0 0;"></div>
+                <div style="width:46px;height:66px;background:#38bdf8;border-radius:4px 4px 0 0;"></div>
+                <div style="width:46px;height:40px;background:#0891b2;border-radius:4px 4px 0 0;"></div>
+                <div style="width:46px;height:26px;background:#7dd3fc;border-radius:4px 4px 0 0;"></div>
+            </div>
+            <div class="map-note">X 轴：主题编号 0~7　Y 轴：评论数量（条）　Z 轴：情感极性占比；点击柱体可弹出浮层查看情感类别与关键词。</div>
+        </div>
+    </div>`;
+}
+
+/* ============ 第5章 RFM 分层画像工作台 ============ */
+function renderRfm(content) {
+    content.innerHTML = `
+    <div class="ing-grid">
+        <div class="panel">
+            <div class="panel-head"><h2>RFM 分层参数调节</h2><div class="panel-btns"><button class="btn-ghost" onclick="openExecModal('RFM 分层画像', '确认执行？执行后将按新规则重新计算用户分层并刷新面板。')">执行</button></div></div>
+            <div class="sub">调整 R、F、M 权重滑块与分箱阈值，计算周期按 90 天窗口。</div>
+            <div class="slider-row"><span class="lb">最近消费时间权重 (R)</span><input type="range" min="0" max="100" value="30"><span class="val">0.30</span></div>
+            <div class="slider-row"><span class="lb">消费频次权重 (F)</span><input type="range" min="0" max="100" value="35"><span class="val">0.35</span></div>
+            <div class="slider-row"><span class="lb">消费金额权重 (M)</span><input type="range" min="0" max="100" value="35"><span class="val">0.35</span></div>
+            <div class="mini-form two-col">
+                <div><label>R 分组间隔（天）</label><input type="number" value="30"></div>
+                <div><label>F 分组间隔（次）</label><input type="number" value="8"></div>
+                <div><label>M 分组间隔（元）</label><input type="number" value="2000"></div>
+                <div><label>分层数量</label><select><option>5 层（近邻）</option><option>3 层</option><option>7 层</option></select></div>
+                <div><label>分析时间窗口</label><select><option>近 90 天</option><option>近 30 天</option><option>近 180 天</option></select></div>
+                <div><label>排除退款订单</label><select><option>开启</option><option>关闭</option></select></div>
+                <div><label>启用归一化方式</label><select><option>Z-Score</option><option>Min-Max</option></select></div>
+            </div>
+            <button class="btn-ghost" onclick="tip('已打开离线数据源目录')">离线查看数据源</button>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head"><h2>分层画像结果摘要</h2></div>
+            <div class="sub">基于近 90 天消费记录计算，共覆盖 12,468 名用户。</div>
+            <div class="kpi-row cols3">
+                <div class="kpi"><div class="num">12,468 人</div><div class="lbl">参与分层用户数</div></div>
+                <div class="kpi"><div class="num">84,143 条</div><div class="lbl">有效消费记录</div></div>
+                <div class="kpi"><div class="num">5 层</div><div class="lbl">分层数量</div></div>
+                <div class="kpi"><div class="num">24.4s</div><div class="lbl">计算耗时</div></div>
+                <div class="kpi"><div class="num warn">18.4%</div><div class="lbl">流失风险用户占比</div></div>
+                <div class="kpi"><div class="num">21.5%</div><div class="lbl">高价值用户占比</div></div>
+            </div>
+            <div class="divider-note">
+                <b>重要价值客户：</b>2,212 人（22.5%），最近消费间隔中位数 6 天、消费频次中位数 14 次、消费金额中位数 5,960 元；建议推送会员权益。<br>
+                <b>重要发展客户：</b>1,864 人（18.9%），消费频次偏低，建议推送优惠券拉动频次。<br>
+                <b>重要保持客户：</b>1,520 人（15.4%），最近消费间隔偏长，建议召回。<br>
+                <b>重要挽留客户：</b>1,210 人（12.3%），流失风险高，建议定向短信召回。<br>
+                <b>一般客群：</b>3,662 人（37.0%），消费金额中位数 412 元，维持日常触达即可。
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-head"><h2>用户分层明细检查</h2></div>
+        <div class="sub">选中列表中的某个用户后，右侧展开区域用于核对单个用户的 RFM 指标和分层归属依据。</div>
+        <div class="cf-scroll">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="text-align:left;color:#64748b;font-size:12px;">
+                <th style="padding:8px;">用户编号</th><th style="padding:8px;">昵称</th><th style="padding:8px;">所属分层</th>
+                <th style="padding:8px;">最近消费间隔</th><th style="padding:8px;">消费频次</th><th style="padding:8px;">消费金额</th>
+                <th style="padding:8px;">R 得分</th><th style="padding:8px;">F 得分</th>
+            </tr></thead>
+            <tbody>
+                <tr style="border-top:1px solid #f1f5f9;"><td style="padding:9px;">U20250913001</td><td style="padding:9px;">星河漫步</td><td style="padding:9px;"><span class="tag-chip">重要价值客户</span></td><td style="padding:9px;">19 天</td><td style="padding:9px;">78 次</td><td style="padding:9px;">4,286.50 元</td><td style="padding:9px;">5.0</td><td style="padding:9px;">5.0</td></tr>
+                <tr style="border-top:1px solid #f1f5f9;"><td style="padding:9px;">U20250913002</td><td style="padding:9px;">山间清风</td><td style="padding:9px;"><span class="tag-chip">重要发展客户</span></td><td style="padding:9px;">8 天</td><td style="padding:9px;">21 次</td><td style="padding:9px;">2,315.00 元</td><td style="padding:9px;">4.2</td><td style="padding:9px;">3.8</td></tr>
+                <tr style="border-top:1px solid #f1f5f9;"><td style="padding:9px;">U20250913003</td><td style="padding:9px;">橘子海</td><td style="padding:9px;"><span class="tag-chip">重要保持客户</span></td><td style="padding:9px;">47 天</td><td style="padding:9px;">35 次</td><td style="padding:9px;">6,890.20 元</td><td style="padding:9px;">2.1</td><td style="padding:9px;">4.5</td></tr>
+                <tr style="border-top:1px solid #f1f5f9;"><td style="padding:9px;">U20250913004</td><td style="padding:9px;">晚风邮差</td><td style="padding:9px;"><span class="tag-chip">重要挽留客户</span></td><td style="padding:9px;">76 天</td><td style="padding:9px;">12 次</td><td style="padding:9px;">1,580.00 元</td><td style="padding:9px;">1.2</td><td style="padding:9px;">2.6</td></tr>
+                <tr style="border-top:1px solid #f1f5f9;"><td style="padding:9px;">U20250913005</td><td style="padding:9px;">半糖去冰</td><td style="padding:9px;"><span class="tag-chip">一般客群</span></td><td style="padding:9px;">32 天</td><td style="padding:9px;">6 次</td><td style="padding:9px;">412.80 元</td><td style="padding:9px;">3.0</td><td style="padding:9px;">1.5</td></tr>
+                <tr style="border-top:1px solid #f1f5f9;"><td style="padding:9px;">U20250913006</td><td style="padding:9px;">云边小卖部</td><td style="padding:9px;"><span class="tag-chip">重要价值客户</span></td><td style="padding:9px;">12 天</td><td style="padding:9px;">92 次</td><td style="padding:9px;">8,120.00 元</td><td style="padding:9px;">5.0</td><td style="padding:9px;">5.0</td></tr>
+            </tbody>
+        </table>
+        </div>
+    </div>`;
+}
+
+/* ============ 第6章 消费预测与异常检测 ============ */
+function renderForecast(content) {
+    const anoms = [
+        ["ANOM-20260913-001", "2026-09-13 09:42:18", "餐饮", "浙江商圈", "28,640", "4.82", "金额骤增", "待处理"],
+        ["ANOM-20260913-002", "2026-09-13 08:15:33", "零售", "中央商务区", "19,872.6", "2.96", "频次异常", "待处理"],
+        ["ANOM-20260913-003", "2026-09-12 21:08:47", "零售", "西安商圈", "32,150.5", "5.14", "金额突降", "已确认"],
+        ["ANOM-20260913-004", "2026-09-12 19:53:52", "餐饮", "武林商圈", "8640.0", "3.21", "客单价异常", "待处理"],
+        ["ANOM-20260913-005", "2026-09-12 14:56:25", "旅游", "锦江商圈", "24,680.2", "4.07", "品类偏好偏移", "已确认"],
+        ["ANOM-20260913-006", "2026-09-11 22:41:05", "餐饮", "滨江商圈", "27,980.0", "4.55", "金额骤增", "观察中"],
+    ];
+    content.innerHTML = `
+    <div class="panel">
+        <div class="panel-head"><h2>预测与检测参数</h2><div class="panel-btns"><button class="btn-ghost" onclick="openExecModal('消费预测与异常检测', '预测窗口未来 14 天、Prophet 时序模型、异常阈值 2.5σ，确认后开始执行预测与检测？')">执行</button></div></div>
+        <div class="sub">预测任务条件与异常检测敏感度，覆盖金额、频次、客单价与品类偏好偏移。</div>
+        <div class="mini-form two-col">
+            <div><label>预测时间窗口</label><select><option>未来 14 天</option><option>未来 7 天</option><option>未来 30 天</option></select></div>
+            <div><label>预测模型类型</label><select><option>Prophet 时序模型</option><option>ARIMA</option><option>LSTM</option><option>XGBoost</option></select></div>
+            <div><label>异常检测阈值</label><input value="2.5σ"></div>
+            <div><label>敏感检测维度</label><select><option>消费金额</option><option>消费频次</option><option>客单价</option><option>品类偏好偏移</option></select></div>
+            <div><label>检测维度</label><select><option>餐饮 - 零售</option><option>全渠道</option></select></div>
+            <div><label>置信水平</label><select><option>95%</option><option>90%</option><option>99%</option></select></div>
+            <div><label>最小异常次数</label><input type="number" value="3"></div>
+            <div><label>平滑窗口</label><select><option>早期窗口</option><option>中期窗口</option></select></div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-head"><h2>消费趋势与异常可视化</h2></div>
+        <div class="sub">实线为已发生的消费记录，虚线为未来 14 天模型推算值，偏离带为正常波动范围。</div>
+        <div class="chart-box">
+            <div style="font-size:12px;color:#64748b;margin-bottom:8px;">
+                <span class="tag-chip">— 历史消费金额</span>　
+                <span class="tag-chip">┄ 预测消费金额</span>　
+                <span class="tag-chip warn">◌ 异常点数量上限</span>　
+                <span class="tag-chip">◌ 异常样本下限带</span>
+            </div>
+            <svg viewBox="0 0 700 220" style="width:100%;height:220px;">
+                <line x1="40" y1="20" x2="690" y2="20" stroke="#34d399" stroke-dasharray="6 4" stroke-width="1.5"/>
+                <line x1="40" y1="190" x2="690" y2="190" stroke="#818cf8" stroke-dasharray="6 4" stroke-width="1.5"/>
+                <path d="M40,150 C90,140 120,165 160,155 C200,145 230,110 280,120 C330,130 360,160 400,150 C440,140 470,95 520,105 C560,115 590,140 620,130" fill="none" stroke="#0e7490" stroke-width="2.5"/>
+                <path d="M620,130 C645,115 665,90 690,70" fill="none" stroke="#0e7490" stroke-width="2.5" stroke-dasharray="6 4"/>
+                <circle cx="520" cy="105" r="5" fill="#ef4444"/>
+                <text x="40" y="210" font-size="10" fill="#94a3b8">08-01</text>
+                <text x="180" y="210" font-size="10" fill="#94a3b8">08-15</text>
+                <text x="330" y="210" font-size="10" fill="#94a3b8">08-30</text>
+                <text x="480" y="210" font-size="10" fill="#94a3b8">09-10</text>
+                <text x="630" y="210" font-size="10" fill="#94a3b8">09-20</text>
+            </svg>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-head"><h2>异常消费事件清单</h2><div class="panel-btns"><button class="btn-ghost" onclick="tip('已拉取最新检测结果')">刷新列表</button><button class="btn-ghost" onclick="tip('打开新建记录弹窗（手动补录异常事件）')">新建记录</button></div></div>
+        <div class="sub">按偏离度从高到低排列检测结果，支持按来源筛选与批量处理。</div>
+        <div class="cf-scroll">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="text-align:left;color:#64748b;font-size:12px;">
+                <th style="padding:8px;width:26px;"><input type="checkbox"></th>
+                <th style="padding:8px;">事件编号</th><th style="padding:8px;">发生时间</th><th style="padding:8px;">数据来源</th>
+                <th style="padding:8px;">区域</th><th style="padding:8px;">消费金额</th><th style="padding:8px;">偏离度</th>
+                <th style="padding:8px;">异常类型</th><th style="padding:8px;">处理状态</th><th style="padding:8px;">操作</th>
+            </tr></thead>
+            <tbody>
+                ${anoms.map(a => `
+                <tr style="border-top:1px solid #f1f5f9;">
+                    <td style="padding:8px;"><input type="checkbox"></td>
+                    <td style="padding:8px;">${a[0]}</td><td style="padding:8px;">${a[1]}</td><td style="padding:8px;">${a[2]}</td>
+                    <td style="padding:8px;">${a[3]}</td><td style="padding:8px;">${a[4]}</td><td style="padding:8px;">${a[5]}</td>
+                    <td style="padding:8px;">${a[6]}</td>
+                    <td style="padding:8px;"><span class="status-badge ${a[7]==='待处理'?'pending':(a[7]==='观察中'?'paused':'completed')}">${a[7]}</span></td>
+                    <td style="padding:8px;"><button class="btn-link" onclick="tip('编辑记录：${a[0]}')">编辑记录</button><button class="btn-link" onclick="tip('查看详情：${a[0]}')">查看详情</button><button class="btn-link danger" onclick="tip('删除记录：${a[0]}')">删除记录</button></td>
+                </tr>`).join("")}
+            </tbody>
+        </table>
+        </div>
+    </div>`;
+}
+
+/* ============ 第7章 空间热点与区域分布 ============ */
+function renderSpatial(content) {
+    content.innerHTML = `
+    <div class="panel">
+        <div class="panel-head"><h2>消费热点地图</h2></div>
+        <div class="sub">按区、县、商圈底图叠加消费分布与聚集标记。</div>
+        <div class="chart-dark" style="min-height:240px;">
+            <div class="view-toggle"><button>2D</button><button>3D</button></div>
+            <div class="map-title">消费热力地图</div>
+            <div class="map-note">14 个区县，消费分布热力</div>
+            <div class="map-tag" style="left:38%;top:30%;">成都 78.2万 / 168万㎡</div>
+            <div class="map-tag" style="left:55%;top:45%;">绵阳 4.9万 / 42%</div>
+            <div class="map-tag" style="left:30%;top:55%;">德阳 3.2万 / 31%</div>
+            <div class="map-tag" style="left:60%;top:65%;">乐山 2.8万 / 26%</div>
+            <div class="map-tag" style="left:45%;top:72%;">宜宾 1.9万 / 18%</div>
+            <div class="legend-lbl">消费金额（元）：低 → 高</div>
+            <div class="legend-bar"></div>
+        </div>
+    </div>
+
+    <div class="ing-grid" style="margin-top:16px;">
+        <div class="panel">
+            <div class="panel-head"><h2>区域热点摘要</h2></div>
+            <div class="sub">热点区域数量、消费突变与热点迁移结论。</div>
+            <div class="kpi-row cols3">
+                <div class="kpi"><div class="num">12 个</div><div class="lbl">覆盖区域数</div></div>
+                <div class="kpi"><div class="num">9 个</div><div class="lbl">热点聚集区</div></div>
+                <div class="kpi"><div class="num warn">2 个</div><div class="lbl">消费突变区</div></div>
+                <div class="kpi"><div class="num">3 个</div><div class="lbl">热点迁移区</div></div>
+                <div class="kpi"><div class="num">74.4</div><div class="lbl">平均热度指数</div></div>
+                <div class="kpi"><div class="num">化城商圈 82.4</div><div class="lbl">最高消费密度区域</div></div>
+            </div>
+            <div class="divider-note">
+                <b>热点区域排名（前五商圈）：</b><br>
+                1. 春熙路商圈　19.8 万<br>
+                2. 三圣乡文化小镇　98.7 万<br>
+                3. 环球中心商圈　67.3 万<br>
+                4. 王府井大街商圈　41.2 万<br>
+                5. 宽窄巷子　19.1 万
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head"><h2>空间异常提示</h2></div>
+            <div class="sub">系统自动推送的空间异常信号，按待处理与高等级优先排列。</div>
+            <div class="cf-scroll" style="max-height:300px;">
+                <div class="alert-list-item"><div class="rail high"></div><div class="at">
+                    <div class="t">成华区新开商圈消费密度同比上升 18.6%</div>
+                    <div class="d">成华区新开商圈消费密度较上期同比上升 18.6%、周末客流提升 15%，建议关注该片区用户的引流与转化。</div>
+                    <div class="meta">2026-09-13 11:47:18　来源：空间异常检测引擎　<span class="status-badge pending">待处理</span></div>
+                </div></div>
+                <div class="alert-list-item"><div class="rail mid"></div><div class="at">
+                    <div class="t">高新科技园午间餐饮订单下降 12.7%</div>
+                    <div class="d">高新科技园午间餐饮订单环比下降 12.7%，周四波动明显，建议关注片区餐饮门店结构调整与优惠投放。</div>
+                    <div class="meta">2026-09-13 10:02:41　来源：空间异常检测引擎　<span class="status-badge processing">观察中</span></div>
+                </div></div>
+                <div class="alert-list-item"><div class="rail low"></div><div class="at">
+                    <div class="t">温江新区夜间订单占比上升</div>
+                    <div class="d">温江新区夜间订单占比上升，热点重心由北向南转移，建议纳入跨周观察清单，后续纳入推荐区域调整范围。</div>
+                    <div class="meta">2026-09-13 09:15:06　来源：空间异常检测引擎　<span class="status-badge completed">已确认</span></div>
+                </div></div>
+                <div class="alert-list-item"><div class="rail low"></div><div class="at">
+                    <div class="t">环球中心周末客流持续聚集</div>
+                    <div class="d">环球中心商圈周末客流连续三周聚集，已纳入重点商圈观察名单，建议配套营销资源倾斜。</div>
+                    <div class="meta">2026-09-12 18:30:52　来源：空间异常检测引擎　<span class="status-badge completed">已确认</span></div>
+                </div></div>
+                <div class="alert-list-item"><div class="rail mid"></div><div class="at">
+                    <div class="t">双流机场临空带消费异常回落</div>
+                    <div class="d">双流机场临空带消费金额较上周回落 9.3%，与航班量波动相关，暂未触发高等级告警。</div>
+                    <div class="meta">2026-09-12 16:08:19　来源：空间异常检测引擎　<span class="status-badge paused">已关闭</span></div>
+                </div></div>
+            </div>
+        </div>
+    </div>`;
+}
+
+/* ============ 第8章 个性化推荐工作台 ============ */
+function renderRecommend(content) {
+    content.innerHTML = `
+    <div class="panel">
+        <div class="panel-head"><h2>推荐策略配置台</h2><div class="panel-btns"><button class="btn-ghost" onclick="openExecModal('个性化推荐', '确认执行？执行后将进入任务队列并刷新推荐结果相关面板。')">执行任务</button><button class="btn-ghost" onclick="tip('已刷新当前推荐参数')">刷新参数</button></div></div>
+        <div class="sub">配置召回、排序、过滤、画像四组参数，并即时调整生效。</div>
+        <div class="mini-form two-col">
+            <div><label>召回策略</label><select><option>协同过滤 + 内容标签 + 空间热点</option><option>协同过滤</option><option>内容标签</option><option>空间热点</option></select></div>
+            <div><label>召回返回数量</label><input type="number" value="500"></div>
+            <div><label>最低置信度</label><input type="number" step="0.01" value="0.35"></div>
+            <div><label>行为回溯窗口</label><input type="number" value="30"></div>
+            <div><label>RFM 消费权重</label><input type="number" step="0.01" value="0.05"></div>
+            <div><label>内容权重</label><input type="number" step="0.01" value="0.60"></div>
+            <div><label>空间距离权重</label><input type="number" step="0.01" value="0.25"></div>
+            <div><label>协同过滤权重</label><input type="number" step="0.01" value="0.10"></div>
+            <div><label>跨品类推荐权重</label><input type="number" step="0.01" value="0.20"></div>
+            <div><label>最终兜底条数</label><input type="number" value="20"></div>
+            <div><label>最小匹配得分</label><input type="number" step="0.01" value="0.5"></div>
+            <div><label>最大兜底条数</label><input type="number" value="5"></div>
+            <div><label>用户年龄段</label><input value="18 ~ 45"></div>
+            <div><label>人群生命周期</label><select><option>全量</option><option>新手</option><option>活跃</option><option>流失</option></select></div>
+            <div><label>候选池规模</label><input type="number" value="15"></div>
+            <div><label>过滤规则数量</label><input type="number" value="4"></div>
+        </div>
+        <button class="btn-ghost" onclick="tip('召回配置已启用')">启用召回配置</button>
+        <button class="btn-ghost" onclick="tip('精排配置已启用')" style="margin-left:8px;">启用精排配置</button>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+        <div class="panel-head"><h2>推荐结果摘要</h2></div>
+        <div class="sub">上次推荐任务生成结果，命中与覆盖指标，支持继续排查。</div>
+        <div class="kpi-row cols3">
+            <div class="kpi"><div class="num">87.6%</div><div class="lbl">推荐覆盖率</div></div>
+            <div class="kpi"><div class="num">34.2%</div><div class="lbl">命中率</div></div>
+            <div class="kpi"><div class="num">18.4 条</div><div class="lbl">人均推荐条数</div></div>
+            <div class="kpi"><div class="num">0.72</div><div class="lbl">品类多样性指数</div></div>
+            <div class="kpi"><div class="num warn">9.7%</div><div class="lbl">冷启动用户占比</div></div>
+            <div class="kpi"><div class="num">2.8</div><div class="lbl">近 7 日转化数据</div></div>
+        </div>
+        <div class="divider-note">
+            <b>高价值活跃用户样例：</b>匹配度 0.92，距离 1.2km，人均价格 68 元。<br>
+            <b>潜力成长用户样例：</b>匹配度 0.81，人均价格 42 元。<br>
+            <b>站内冷启动用户冷启动规则：</b>规则 1：公有云召回（近距离 0km，距离 1.2km）；规则 2：热门相似地区上拉（近距离 0km，距离 0.4km）；规则 3：热销候选池兜底（近距离 0km，距离 2.4km）。
+        </div>
+    </div>`;
+}
+
+/* ============ 第9章 准实时 API 监测台 ============ */
+function renderApiMonitor(content) {
+    const apiLogs = [
+        ["2026-09-13 12:12:46", "INFO", "prediction-service 消费预测接口延迟 312ms，已触发告警，当前 5min P95 升至 312ms"],
+        ["2026-09-13 12:12:32", "WARN", "prediction-service 消费预测接口延迟 312ms，已触发告警，当前 5min P95 升至 312ms"],
+        ["2026-09-13 12:12:18", "INFO", "content-service 评论舆情数据源同步完成，批次 6289_rows/12043，耗时 52s"],
+        ["2026-09-13 12:12:05", "INFO", "recommendation-service 推荐召回耗时 182ms，候选池 500，过滤后 15"],
+        ["2026-09-13 12:11:52", "INFO", "api-gateway 正常路由 /api/v1/recommend/personal，请求 12ms，成功 200"],
+        ["2026-09-13 12:11:40", "ERROR", "content-service 评论舆情数据源同步失败：endpoint 超时 3000ms，已重试 3 次"],
+        ["2026-09-13 12:11:28", "INFO", "api-gateway 正常路由 /api/v1/forecast/trend，请求 15ms，成功 200"],
+        ["2026-09-13 12:11:15", "INFO", "cleaning-service 清洗融合批次 cf_1791647077223 完成，记录=12，去重=64"],
+        ["2026-09-13 12:11:02", "WARN", "spatial-service 空间热点网格计算耗时 4120ms，超过阈值 3000ms"],
+        ["2026-09-13 12:10:48", "INFO", "api-gateway 正常路由 /api/v1/spatial/hotspots，请求 11ms，成功 200"],
+    ];
+    content.innerHTML = `
+    <div class="panel">
+        <div class="panel-head"><h2>API 实时读数监测台</h2><div class="panel-btns"><button class="btn-ghost" onclick="openExecModal('准实时 API 监测', '确认执行？执行后将进入任务队列并刷新相关面板。')">执行任务</button><button class="btn-ghost" onclick="tip('已刷新最新读数')">刷新列表</button></div></div>
+        <div class="sub">实时监测各服务调用与接口状态，近 5 分钟统计。</div>
+        <div style="text-align:center;margin:10px 0 16px;">
+            <div class="big-num">128,460<small>次</small></div>
+            <div style="font-size:12px;color:#64748b;">API 总调用量（近 5 分钟）</div>
+        </div>
+        <div class="kpi-row cols3">
+            <div class="kpi"><div class="num">86 ms</div><div class="lbl">平均响应延迟</div></div>
+            <div class="kpi"><div class="num">99.87%</div><div class="lbl">调用成功率</div></div>
+            <div class="kpi"><div class="num">428 次/秒</div><div class="lbl">当前 QPS</div></div>
+            <div class="kpi"><div class="num">17 次</div><div class="lbl">异常调用数</div></div>
+            <div class="kpi"><div class="num">24 个</div><div class="lbl">服务节点数量</div></div>
+            <div class="kpi"><div class="num">9 个</div><div class="lbl">数据库连接池</div></div>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:#64748b;">
+            综合负载趋势 <span class="tag-chip">运行中</span> <span class="tag-chip">运行中</span> <span class="tag-chip warn">加载中</span> <span class="tag-chip">运行中</span> <span class="tag-chip">运行中</span> <span class="tag-chip">运行中</span>　<span style="float:right;color:#0e7490;font-weight:600;">200 ms</span>
+        </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+        <div class="panel-head"><h2>服务状态指示灯墙</h2></div>
+        <div class="sub">按 API 端点、数据源、依赖服务、运行环境四组展示服务状态。</div>
+        <div class="lamp-wall">
+            <div class="lamp-group">
+                <h4>API 端点</h4>
+                <div class="lamp-grid">
+                    <div class="lamp-cell"><span class="lamp-dot"></span><span class="lamp-txt">正常</span><div class="nm">消费预测接口</div></div>
+                    <div class="lamp-cell"><span class="lamp-dot warn"></span><span class="lamp-txt warn">延迟偏高</span><div class="nm">评论舆情接口</div></div>
+                    <div class="lamp-cell"><span class="lamp-dot"></span><span class="lamp-txt">正常</span><div class="nm">推荐召回接口</div></div>
+                    <div class="lamp-cell"><span class="lamp-dot"></span><span class="lamp-txt">正常</span><div class="nm">RFM 分层接口</div></div>
+                    <div class="lamp-cell"><span class="lamp-dot"></span><span class="lamp-txt">正常</span><div class="nm">空间热点接口</div></div>
+                    <div class="lamp-cell"><span class="lamp-dot"></span><span class="lamp-txt">正常</span><div class="nm">数据接入接口</div></div>
+                </div>
+            </div>
+            <div class="lamp-group">
+                <h4>数据源</h4>
+                <div class="lamp-grid">
+                    <div class="lamp-cell"><span class="lamp-dot"></span><span class="lamp-txt">已接入</span><div class="nm">餐饮订单数据源</div></div>
+                    <div class="lamp-cell"><span class="lamp-dot"></span><span class="lamp-txt">已接入</span><div class="nm">旅游门票数据源</div></div>
+                    <div class="lamp-cell"><span class="lamp-dot"></span><span class="lamp-txt">已接入</span><div class="nm">零售 POS 数据源</div></div>
+                    <div class="lamp-cell"><span class="lamp-dot warn"></span><span class="lamp-txt warn">同步延迟</span><div class="nm">评论舆情数据源</div></div>
+                    <div class="lamp-cell"><span class="lamp-dot"></span><span class="lamp-txt">已接入</span><div class="nm">用户主数据</div></div>
+                    <div class="lamp-cell"><span class="lamp-dot"></span><span class="lamp-txt">已接入</span><div class="nm">门店维表</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+        <div class="panel-head"><h2>API 运行日志</h2><div class="panel-btns"><button class="btn-ghost" onclick="tip('日志已清空')">Clear</button></div></div>
+        <div class="sub">按时间倒序记录各微服务接口调用情况，INFO / WARN / ERROR 区分级别。</div>
+        <div class="log-box" style="max-height:260px;">
+            ${apiLogs.map(l => `<div class="log-line ${l[1]}"><span class="ts">${l[0]}</span> [${l[1]}] ${esc(l[2])}</div>`).join("")}
+        </div>
+    </div>`;
+}
+
+/* ============ 第10章 消费分析可视化大屏 ============ */
+function renderDashboard(content) {
+    content.innerHTML = `
+    <div class="panel">
+        <div class="panel-head"><h2>核心消费指标摘要</h2></div>
+        <div class="sub">统计周期 2026-08-15 至 2026-09-13。</div>
+        <div class="kpi-row" style="grid-template-columns:repeat(6,1fr);">
+            <div class="kpi"><div class="num">¥ 8,642.7 万</div><div class="lbl">消费总额</div></div>
+            <div class="kpi"><div class="num">186,429 人</div><div class="lbl">活跃用户数</div></div>
+            <div class="kpi"><div class="num warn">327 起</div><div class="lbl">异常事件量</div></div>
+            <div class="kpi"><div class="num">6 类 / 42 维度</div><div class="lbl">情感正向占比</div></div>
+            <div class="kpi"><div class="num">¥ 463.5</div><div class="lbl">支付笔均</div></div>
+            <div class="kpi"><div class="num">78.6%</div><div class="lbl">复购环比</div></div>
+        </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+        <div class="panel-head"><h2>消费趋势与分布分析</h2></div>
+        <div class="sub">近 30 天消费金额走势（柱）与 RFM 分层占比（线）。</div>
+        <div class="chart-box">
+            <div style="font-size:12px;color:#64748b;margin-bottom:8px;"><span class="tag-chip">■ 每日消费金额（元）</span>　<span class="tag-chip">◀ RFM 分层占比</span></div>
+            <svg viewBox="0 0 700 240" style="width:100%;height:240px;">
+                <g fill="#0891b2">
+                    <rect x="40" y="120" width="26" height="80"/><rect x="80" y="105" width="26" height="95"/>
+                    <rect x="120" y="112" width="26" height="88"/><rect x="160" y="90" width="26" height="110"/>
+                    <rect x="200" y="100" width="26" height="100"/><rect x="240" y="78" width="26" height="122"/>
+                    <rect x="280" y="85" width="26" height="115"/><rect x="320" y="66" width="26" height="134"/>
+                    <rect x="360" y="72" width="26" height="128"/><rect x="400" y="60" width="26" height="140"/>
+                    <rect x="440" y="70" width="26" height="130"/><rect x="480" y="52" width="26" height="148"/>
+                    <rect x="520" y="58" width="26" height="142"/><rect x="560" y="48" width="26" height="152"/>
+                </g>
+                <path d="M53,150 L93,145 L133,160 L173,130 L213,155 L253,120 L293,140 L333,125 L373,148 L413,135 L453,150 L493,130 L533,145 L573,132" fill="none" stroke="#7c3aed" stroke-width="2"/>
+                <text x="40" y="225" font-size="10" fill="#94a3b8">08-15</text>
+                <text x="200" y="225" font-size="10" fill="#94a3b8">08-25</text>
+                <text x="360" y="225" font-size="10" fill="#94a3b8">09-04</text>
+                <text x="520" y="225" font-size="10" fill="#94a3b8">09-13</text>
+            </svg>
+        </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+        <div class="panel-head"><h2>区域消费热度地图</h2></div>
+        <div class="sub">按行政区划底图叠加消费金额高低，数据截止 2026-09-13 12:00。</div>
+        <div class="chart-dark" style="min-height:220px;">
+            <div class="view-toggle"><button>2D</button><button>3D</button></div>
+            <div class="map-title">区域消费热度地图</div>
+            <div class="map-note">14 个区县，消费金额热力</div>
+            <div class="map-tag" style="left:38%;top:30%;">锦江区 ¥98.7 万</div>
+            <div class="map-tag" style="left:55%;top:45%;">武侯区 ¥76.3 万</div>
+            <div class="map-tag" style="left:30%;top:55%;">成华区 ¥52.1 万</div>
+            <div class="map-tag" style="left:60%;top:65%;">高新区 ¥68.9 万</div>
+            <div class="map-tag" style="left:45%;top:72%;">天府新区 ¥41.2 万</div>
+            <div class="legend-lbl">消费金额（元）：低 → 高</div>
+            <div class="legend-bar"></div>
+        </div>
+    </div>`;
+}
+
+/* ============ 第11章 系统初始化与参数设置 ============ */
+function renderSysSettings(content) {
+    const faqs = [
+        "RFM 分层模型中最近消费窗口如何选择？",
+        "评论情感阈值建议范围？",
+        "消费预测窗口设置多长合适？",
+        "异常检测灵敏度选择有什么影响？",
+        "空间热点网格粒度如何确定？",
+        "多源数据融合策略怎么选？",
+        "本地数据路径有什么要求？",
+        "调度周期表达式怎么写？",
+    ];
+    content.innerHTML = `
+    <div class="panel">
+        <div class="panel-head"><h2>系统初始化向导</h2></div>
+        <div class="sub">按顺序完成数据源接入、分析参数、运行环境与配置校验。</div>
+        <div class="step-bar">
+            <div class="step done">1 数据源接入</div>
+            <div class="step cur">2 分析参数设置</div>
+            <div class="step">3 运行环境配置</div>
+            <div class="step">4 配置校验与生效</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <button class="btn-ghost">上一步</button>
+            <div>
+                <button class="btn-ghost" onclick="tip('打开编辑记录弹窗（集中修改全部参数）')">编辑记录</button>
+                <button class="btn-ghost" style="margin-left:8px;" onclick="openExecModal('系统初始化', '确认执行？将直接启动本地消费分析流程。')">执行任务</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="ing-grid" style="margin-top:16px;">
+        <div class="panel">
+            <div class="panel-head"><h2>分析参数设置</h2><div class="panel-btns"><button class="btn-ghost" onclick="openExecModal('分析参数设置', '确认保存当前分析参数？')">保存</button></div></div>
+            <div class="sub">带 * 号项为必填，调整后需点击保存生效。</div>
+            <div class="mini-form two-col">
+                <div><label>评论情感正阈值 *</label><input type="number" step="0.01" value="0.65"></div>
+                <div><label>评论情感负阈值 *</label><input type="number" step="0.01" value="0.35"></div>
+                <div><label>RFM 最近消费窗口（天）*</label><input type="number" value="30"></div>
+                <div><label>RFM 高价值阈值金额 *</label><input type="number" value="8"></div>
+                <div><label>RFM 高价值客户金额间隔（元）*</label><input type="number" value="2000"></div>
+                <div><label>消费预测窗口（天）*</label><input type="number" value="14"></div>
+                <div><label>异常检测灵敏度 *</label><select><option>中</option><option>低</option><option>高</option></select></div>
+                <div><label>空间热点网格粒度（米）*</label><input type="number" value="500"></div>
+                <div><label>个性化推荐返回条数 *</label><input type="number" value="10"></div>
+                <div><label>排序策略名称 *</label><select><option>最新</option><option>最热</option><option>综合</option></select></div>
+                <div><label>本地数据路径</label><input value="D:/data/local_consumption/"></div>
+                <div><label>调度周期表达式</label><input value="0 */5 * * * ?"></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head"><h2>配置帮助说明</h2></div>
+            <div class="sub">以下为初始化配置常见问题，点击问题展开对应说明。</div>
+            ${faqs.map((f, i) => `
+            <div class="faq-item" onclick="this.classList.toggle('open')">
+                <div class="faq-q"><span>${f}</span><span style="color:#94a3b8;">▾</span></div>
+                <div class="faq-a">该参数建议结合业务场景与数据量选择：${f.replace("？", "")}的推荐取值范围与业务影响已在初始化向导中给出参考；若拿不准可保持默认值，后续在分析过程中再逐步微调。</div>
+            </div>`).join("")}
+        </div>
+    </div>`;
+}
+
+/* ---------- 全局拖拽拦截：preventDefault 让 pywebview DOM API 能接管文件路径 ---------- */
+document.addEventListener("dragover", function (e) { e.preventDefault(); });
+document.addEventListener("drop", function (e) { e.preventDefault(); });
+
+/* ---------- 启动 ---------- */
+if (!checkSession()) {
+    document.getElementById("loginView").style.display = "flex";
+}
+</script>
+</body>
+</html>
