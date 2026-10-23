@@ -1,0 +1,513 @@
+{
+  "data": [
+    {
+      "city": "成都",
+      "lng": 104.0668,
+      "lat": 30.5728,
+      "area_code": "510100",
+      "retail_total_yi": 9006.6,
+      "population_wan": 2094.65,
+      "per_capita_yuan": 42998.0,
+      "heat_score": 100.0,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "绵阳",
+      "lng": 104.7414,
+      "lat": 31.4675,
+      "area_code": "510700",
+      "retail_total_yi": 1448.5,
+      "population_wan": 486.82,
+      "per_capita_yuan": 29754.0,
+      "heat_score": 37.33,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "德阳",
+      "lng": 104.3979,
+      "lat": 31.1269,
+      "area_code": "510600",
+      "retail_total_yi": 835.2,
+      "population_wan": 345.62,
+      "per_capita_yuan": 24165.0,
+      "heat_score": 28.04,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "自贡",
+      "lng": 104.0784,
+      "lat": 29.339,
+      "area_code": "510300",
+      "retail_total_yi": 732.8,
+      "population_wan": 248.04,
+      "per_capita_yuan": 29544.0,
+      "heat_score": 32.37,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "攀枝花",
+      "lng": 101.7182,
+      "lat": 26.5823,
+      "area_code": "510400",
+      "retail_total_yi": 378.5,
+      "population_wan": 121.22,
+      "per_capita_yuan": 31224.0,
+      "heat_score": 31.57,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "泸州",
+      "lng": 105.4426,
+      "lat": 28.8718,
+      "area_code": "510500",
+      "retail_total_yi": 1025.6,
+      "population_wan": 425.41,
+      "per_capita_yuan": 24109.0,
+      "heat_score": 29.26,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "遂宁",
+      "lng": 105.5713,
+      "lat": 30.5128,
+      "area_code": "510900",
+      "retail_total_yi": 756.3,
+      "population_wan": 281.4,
+      "per_capita_yuan": 26876.0,
+      "heat_score": 30.04,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "内江",
+      "lng": 105.0659,
+      "lat": 29.5815,
+      "area_code": "511000",
+      "retail_total_yi": 658.9,
+      "population_wan": 314.09,
+      "per_capita_yuan": 20978.0,
+      "heat_score": 23.9,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "乐山",
+      "lng": 103.7613,
+      "lat": 29.5821,
+      "area_code": "511100",
+      "retail_total_yi": 892.4,
+      "population_wan": 316.15,
+      "per_capita_yuan": 28227.0,
+      "heat_score": 32.2,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "南充",
+      "lng": 106.0828,
+      "lat": 30.7961,
+      "area_code": "511300",
+      "retail_total_yi": 1385.7,
+      "population_wan": 560.76,
+      "per_capita_yuan": 24711.0,
+      "heat_score": 32.22,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "眉山",
+      "lng": 103.8485,
+      "lat": 30.0773,
+      "area_code": "511400",
+      "retail_total_yi": 723.6,
+      "population_wan": 295.34,
+      "per_capita_yuan": 24501.0,
+      "heat_score": 27.61,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "宜宾",
+      "lng": 104.6417,
+      "lat": 28.7525,
+      "area_code": "511500",
+      "retail_total_yi": 1156.8,
+      "population_wan": 458.88,
+      "per_capita_yuan": 25209.0,
+      "heat_score": 31.16,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "广安",
+      "lng": 106.6332,
+      "lat": 30.4555,
+      "area_code": "511600",
+      "retail_total_yi": 789.2,
+      "population_wan": 325.1,
+      "per_capita_yuan": 24276.0,
+      "heat_score": 27.84,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "达州",
+      "lng": 107.5018,
+      "lat": 31.2095,
+      "area_code": "511700",
+      "retail_total_yi": 1102.5,
+      "population_wan": 538.54,
+      "per_capita_yuan": 20472.0,
+      "heat_score": 26.39,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "雅安",
+      "lng": 103.0421,
+      "lat": 29.9873,
+      "area_code": "511800",
+      "retail_total_yi": 325.8,
+      "population_wan": 143.46,
+      "per_capita_yuan": 22710.0,
+      "heat_score": 23.3,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "巴中",
+      "lng": 106.747,
+      "lat": 31.8581,
+      "area_code": "511900",
+      "retail_total_yi": 528.4,
+      "population_wan": 271.0,
+      "per_capita_yuan": 19498.0,
+      "heat_score": 21.66,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    },
+    {
+      "city": "资阳",
+      "lng": 104.6414,
+      "lat": 30.1222,
+      "area_code": "512000",
+      "retail_total_yi": 586.7,
+      "population_wan": 230.86,
+      "per_capita_yuan": 25414.0,
+      "heat_score": 27.55,
+      "data_source": "四川省统计局2023年统计公报 + 七普人口数据",
+      "fetched_at": "2026-10-13T21:34:36.728963"
+    }
+  ],
+  "echarts_option": {
+    "title": {
+      "text": "四川省消费热力地图",
+      "subtext": "数据来源：四川省统计局2023年统计公报",
+      "left": "center",
+      "textStyle": {
+        "color": "#333"
+      }
+    },
+    "tooltip": {
+      "trigger": "item",
+      "formatter": "function(params) {\n                if (params.seriesType === 'heatmap') {\n                    return `经度: ${params.value[0].toFixed(2)}<br/>` +\n                           `纬度: ${params.value[1].toFixed(2)}<br/>` +\n                           `热力值: ${params.value[2].toFixed(1)}`;\n                }\n                return params.name + '<br/>热力值: ' + params.value[2];\n            }"
+    },
+    "visualMap": {
+      "min": 0,
+      "max": 100,
+      "left": "left",
+      "top": "bottom",
+      "text": [
+        "高",
+        "低"
+      ],
+      "inRange": {
+        "color": [
+          "#313695",
+          "#4575b4",
+          "#74add1",
+          "#abd9e9",
+          "#e0f3f8",
+          "#fee090",
+          "#fdae61",
+          "#f46d43",
+          "#d73027"
+        ]
+      }
+    },
+    "series": [
+      {
+        "name": "消费热力",
+        "type": "heatmap",
+        "data": [
+          [
+            104.0668,
+            30.5728,
+            100.0
+          ],
+          [
+            104.7414,
+            31.4675,
+            37.33
+          ],
+          [
+            104.3979,
+            31.1269,
+            28.04
+          ],
+          [
+            104.0784,
+            29.339,
+            32.37
+          ],
+          [
+            101.7182,
+            26.5823,
+            31.57
+          ],
+          [
+            105.4426,
+            28.8718,
+            29.26
+          ],
+          [
+            105.5713,
+            30.5128,
+            30.04
+          ],
+          [
+            105.0659,
+            29.5815,
+            23.9
+          ],
+          [
+            103.7613,
+            29.5821,
+            32.2
+          ],
+          [
+            106.0828,
+            30.7961,
+            32.22
+          ],
+          [
+            103.8485,
+            30.0773,
+            27.61
+          ],
+          [
+            104.6417,
+            28.7525,
+            31.16
+          ],
+          [
+            106.6332,
+            30.4555,
+            27.84
+          ],
+          [
+            107.5018,
+            31.2095,
+            26.39
+          ],
+          [
+            103.0421,
+            29.9873,
+            23.3
+          ],
+          [
+            106.747,
+            31.8581,
+            21.66
+          ],
+          [
+            104.6414,
+            30.1222,
+            27.55
+          ]
+        ],
+        "pointSize": 20,
+        "blurSize": 15
+      },
+      {
+        "name": "城市标注",
+        "type": "scatter",
+        "data": [
+          {
+            "name": "成都",
+            "value": [
+              104.0668,
+              30.5728,
+              100.0
+            ],
+            "retail": 9006.6
+          },
+          {
+            "name": "绵阳",
+            "value": [
+              104.7414,
+              31.4675,
+              37.33
+            ],
+            "retail": 1448.5
+          },
+          {
+            "name": "德阳",
+            "value": [
+              104.3979,
+              31.1269,
+              28.04
+            ],
+            "retail": 835.2
+          },
+          {
+            "name": "自贡",
+            "value": [
+              104.0784,
+              29.339,
+              32.37
+            ],
+            "retail": 732.8
+          },
+          {
+            "name": "攀枝花",
+            "value": [
+              101.7182,
+              26.5823,
+              31.57
+            ],
+            "retail": 378.5
+          },
+          {
+            "name": "泸州",
+            "value": [
+              105.4426,
+              28.8718,
+              29.26
+            ],
+            "retail": 1025.6
+          },
+          {
+            "name": "遂宁",
+            "value": [
+              105.5713,
+              30.5128,
+              30.04
+            ],
+            "retail": 756.3
+          },
+          {
+            "name": "内江",
+            "value": [
+              105.0659,
+              29.5815,
+              23.9
+            ],
+            "retail": 658.9
+          },
+          {
+            "name": "乐山",
+            "value": [
+              103.7613,
+              29.5821,
+              32.2
+            ],
+            "retail": 892.4
+          },
+          {
+            "name": "南充",
+            "value": [
+              106.0828,
+              30.7961,
+              32.22
+            ],
+            "retail": 1385.7
+          },
+          {
+            "name": "眉山",
+            "value": [
+              103.8485,
+              30.0773,
+              27.61
+            ],
+            "retail": 723.6
+          },
+          {
+            "name": "宜宾",
+            "value": [
+              104.6417,
+              28.7525,
+              31.16
+            ],
+            "retail": 1156.8
+          },
+          {
+            "name": "广安",
+            "value": [
+              106.6332,
+              30.4555,
+              27.84
+            ],
+            "retail": 789.2
+          },
+          {
+            "name": "达州",
+            "value": [
+              107.5018,
+              31.2095,
+              26.39
+            ],
+            "retail": 1102.5
+          },
+          {
+            "name": "雅安",
+            "value": [
+              103.0421,
+              29.9873,
+              23.3
+            ],
+            "retail": 325.8
+          },
+          {
+            "name": "巴中",
+            "value": [
+              106.747,
+              31.8581,
+              21.66
+            ],
+            "retail": 528.4
+          },
+          {
+            "name": "资阳",
+            "value": [
+              104.6414,
+              30.1222,
+              27.55
+            ],
+            "retail": 586.7
+          }
+        ],
+        "symbolSize": 8,
+        "label": {
+          "show": true,
+          "formatter": "{b}",
+          "position": "right",
+          "color": "#333",
+          "fontSize": 11
+        },
+        "itemStyle": {
+          "color": "#fff",
+          "borderColor": "#333",
+          "borderWidth": 1
+        }
+      }
+    ]
+  },
+  "generated_at": "2026-10-13T21:34:36.732097"
+}

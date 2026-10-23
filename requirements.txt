@@ -1,0 +1,18 @@
+# Local Consumption Insight System V1.0 - runtime requirements
+# Target env: venv (Python 3.10.9 / Windows x64)
+# Source: real imports in project source + versions backfilled from the venv
+# NOTE: keep this file ASCII-only; pip on Windows decodes it with the locale codec.
+# ---- Desktop GUI shell (main.py: import webview) ----
+pywebview==6.2.1
+pythonnet==3.1.0
+clr-loader==0.3.1
+bottle==0.13.4
+proxy-tools==0.1.0
+# ---- Data collection and visualization ----
+# pipeline/hotspot_data_fetcher.py, pipeline/heatmap_plotter.py
+requests==2.34.2
+matplotlib==3.10.9
+numpy==2.2.6
+# ---- Data analysis extensions ----
+pandas==2.3.3
+seaborn==0.13.2
