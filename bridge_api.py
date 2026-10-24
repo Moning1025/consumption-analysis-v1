@@ -4,6 +4,9 @@ from typing import Any, Dict, Optional
 from auth.access_guard_middleware import AccessGuardMiddleware
 from auth.session_token_issuer import SessionTokenIssuer
 from auth.role_policy_registry import PolicyDecision
+from pipeline import ingestion_job  # noqa: F401  导入即注册 ingestion.parse / ingestion.register
+from pipeline import job_runner
+from store import job_store
 from pipeline.task_dispatch_service import (
     dispatch_page_task,
     list_registered_task_identifiers,
@@ -172,35 +175,13 @@ class BridgeApi:
     # ---- 多源数据接入台 ----
     def list_ingestion_records(self, limit: int = 100) -> Dict[str, Any]:
         """查询最近导入记录（data_ingestion_console 表，按时间倒序）。
-        按记录创建时间模拟真实流程推进：<2s=已接入10% / 2~5s=预处理中50% / >5s=已完成100%。"""
+
+        S1 起这里只做“读”，不再按 created_at 秒数推算假进度；
+        真实进度由后台任务写进 job_run，前端轮询 get_job 获取。
+        """
         from store.data_ingestion_console_store import query_ingestion_records
-        from store.db_connection import transaction_scope
-        from datetime import datetime
 
         try:
-            now = datetime.now().isoformat(timespec="seconds")
-            with transaction_scope() as conn:
-                rows = conn.execute(
-                    "SELECT id, created_at FROM data_ingestion_console "
-                    "WHERE NOT (status='已完成' AND progress=100)"
-                ).fetchall()
-                for r in rows:
-                    rid, itime = r[0], r[1] or now
-                    try:
-                        t = datetime.fromisoformat(itime)
-                        elapsed = (datetime.now() - t).total_seconds()
-                    except Exception:
-                        elapsed = 999
-                    if elapsed < 2:
-                        new_status, new_pct = "已接入", 10
-                    elif elapsed < 5:
-                        new_status, new_pct = "预处理中", 50
-                    else:
-                        new_status, new_pct = "已完成", 100
-                    conn.execute(
-                        "UPDATE data_ingestion_console SET status=?, progress=? WHERE id=?",
-                        (new_status, new_pct, rid),
-                    )
             return {"success": True, "records": query_ingestion_records(limit=int(limit or 100))}
         except Exception as query_error:  # noqa: BLE001
             logger.exception("list_ingestion_records failed")
@@ -273,7 +254,11 @@ class BridgeApi:
             return {"success": False, "reason": f"overview_error: {overview_error}"}
 
     def import_demo_batch(self, source_type: str, token: str = "", file_ext: str = "") -> Dict[str, Any]:
-        """导入一批演示消费记录（餐饮/旅游/零售），走任务分发鉴权。file_ext 记录文件格式后缀。"""
+        """导入一批演示消费记录（餐饮/旅游/零售）。
+
+        S1 起不再同步写库，而是提交 ingestion.register 后台任务：
+        真实做格式校验 / 落库 / 状态推进，前端凭 job_id 轮询进度。
+        """
         try:
             decision = self._authorize("run_task_data_ingestion_console_1", token)
         except Exception as guard_error:  # noqa: BLE001
@@ -282,17 +267,25 @@ class BridgeApi:
                     "reason": f"鉴权失败: {guard_error}（若提示会话过期请重新登录）"}
         if not decision.permitted:
             return {"success": False, "reason": decision.denial_reason, "permitted": False}
-        from pipeline.ingestion_intake_service import submit_ingestion_batch
 
         samples = DEMO_SAMPLES.get(source_type or "", DEMO_SAMPLES["餐饮订单流水"])
         try:
-            result = submit_ingestion_batch(
-                source_name=source_type,
-                records=samples,
-                operator=self._operator_from_token(token),
-                file_ext=(file_ext or ""),
+            job_id = job_runner.submit_job(
+                job_type=ingestion_job.JOB_TYPE_INGESTION_REGISTER,
+                params={
+                    "source_name": source_type or "餐饮订单流水",
+                    "source_type": "manual",
+                    "records": samples,
+                    "operator": self._operator_from_token(token),
+                    "region_code": "510000",
+                    "file_ext": (file_ext or ""),
+                },
+                operator_name=self._operator_from_token(token),
+                page_identifier="data_ingestion_console",
+                source_kind="ui",
             )
-            return {"success": True, "permitted": True, "data": result}
+            return {"success": True, "permitted": True, "job_id": job_id,
+                    "record_count": len(samples)}
         except Exception as batch_error:  # noqa: BLE001
             logger.exception("import_demo_batch failed")
             return {"success": False, "permitted": True, "reason": f"batch_error: {batch_error}"}
@@ -347,185 +340,49 @@ class BridgeApi:
             return {"success": False, "reason": "未拿到文件路径（pywebview 未注入 pywebviewFullPath）"}
         return self.ingest_local_files(paths)
 
-    @staticmethod
-    def _guess_source_type(filename: str) -> str:
-        """按文件名猜来源类型：餐饮/旅游/零售。"""
-        name = (filename or "").lower()
-        if any(k in name for k in ["餐饮", "餐", "catering", "restaurant", "food", "meal"]):
-            return "餐饮订单流水"
-        if any(k in name for k in ["旅游", "门票", "travel", "ticket", "scenic", "hotel"]):
-            return "旅游门票消费"
-        if any(k in name for k in ["零售", "pos", "retail", "shop", "store", "supermarket", "mall"]):
-            return "零售POS交易"
-        return "餐饮订单流水"
-
-    @staticmethod
-    def _unpack_zip(zip_path: str) -> list:
-        """解压 zip 里的 .csv/.xlsx/.xls/.json 到 store/unpacked/<zip名>/，返回解压出的文件绝对路径列表。"""
-        import os
-        import zipfile
-        from datetime import datetime
-
-        project_root = os.path.dirname(os.path.abspath(__file__))
-        base = os.path.join(project_root, "store", "unpacked")
-        os.makedirs(base, exist_ok=True)
-        stem = os.path.splitext(os.path.basename(zip_path))[0]
-        target = os.path.join(base, f"{stem}_{datetime.now().strftime('%H%M%S')}")
-        os.makedirs(target, exist_ok=True)
-
-        allowed = {".csv", ".xlsx", ".xls", ".json"}
-        extracted = []
-        with zipfile.ZipFile(zip_path) as zf:
-            for name in zf.namelist():
-                if name.endswith("/"):
-                    continue
-                ext = os.path.splitext(name)[1].lower()
-                if ext not in allowed:
-                    continue
-                safe_name = os.path.basename(name)
-                if not safe_name:
-                    continue
-                zf.extract(name, target)
-                extracted.append(os.path.join(target, safe_name))
-        return extracted
-
-    def _register_one(self, fp: str, token: str, note: str = "") -> Dict[str, Any]:
-        """登记单个文件到导入批次清单。"""
-        import os
-        from datetime import datetime
-
-        fname = os.path.basename(fp)
-        ext = os.path.splitext(fp)[1].lower()
-        source_type = self._guess_source_type(fname)
-        size_kb = os.path.getsize(fp) // 1024
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        return self.register_source(
-            source_name=fname,
-            source_type=source_type,
-            endpoint_uri=fp.replace("\\", "/"),
-            token=token,
-            status="已接入",
-            progress=10,
-            operator=self._last_username,
-            term_count=0,
-            payload=f'{{"file_ext":"{ext.lstrip(".")}","size_kb":{size_kb}}}',
-            import_time=now,
-            meta_primary=f"路径: {fp}",
-            meta_secondary=(f"{source_type} · {ext}" + (f"　[{note}]" if note else "")),
-        )
-
     def ingest_local_files(self, file_paths) -> Dict[str, Any]:
-        """接收拖入窗口的本地文件绝对路径列表；.zip 自动解压并登记子文件。"""
+        """拖入/选中的本地文件 → 提交 ingestion.parse 后台任务，立刻返回 job_id。
+
+        真正的解包、逐行统计、批次登记、状态推进都在 pipeline/ingestion_job.py 的
+        后台线程里完成；这个函数只做“后缀/存在性”的快速过滤。
+        """
         import os
 
         if not file_paths:
             return {"success": False, "reason": "no_files"}
-        token = self._last_token
-        accepted_ext = {".csv", ".xlsx", ".xls", ".json", ".zip"}
-        ok, failed = [], []
-        source_ids = []
+        accepted_ext = ingestion_job.ALLOWED_EXTENSIONS
+        accepted, failed = [], []
         for fp in file_paths:
-            try:
-                if not fp or not os.path.isfile(fp):
-                    failed.append({"path": str(fp), "reason": "文件不存在"})
-                    continue
-                ext = os.path.splitext(fp)[1].lower()
-                if ext not in accepted_ext:
-                    failed.append({"path": fp, "reason": f"不支持的后缀 {ext}"})
-                    continue
-                fname = os.path.basename(fp)
+            if not fp or not os.path.isfile(fp):
+                failed.append({"path": str(fp), "reason": "文件不存在"})
+                continue
+            ext = os.path.splitext(fp)[1].lower()
+            if ext not in accepted_ext:
+                failed.append({"path": str(fp), "reason": f"不支持的后缀 {ext}"})
+                continue
+            accepted.append(str(fp))
+        if not accepted:
+            return {"success": False, "reason": "没有可接入的文件", "failed": failed}
 
-                def _collect_id(r):
-                    sid = (r.get("data") or {}).get("source_id")
-                    if sid:
-                        source_ids.append(sid)
-
-                if ext == ".zip":
-                    extracted = self._unpack_zip(fp)
-                    r = self._register_one(fp, token, note=f"压缩包已解压，含 {len(extracted)} 个数据文件")
-                    if r.get("success"):
-                        ok.append(f"{fname}（已解压 {len(extracted)} 个文件）")
-                        _collect_id(r)
-                    else:
-                        failed.append({"path": fp, "reason": r.get("reason", "登记失败")})
-                    for sub in extracted:
-                        try:
-                            rs = self._register_one(sub, token, note=f"解压自 {fname}")
-                            if rs.get("success"):
-                                ok.append("└ " + os.path.basename(sub))
-                                _collect_id(rs)
-                            else:
-                                failed.append({"path": sub, "reason": rs.get("reason", "登记失败")})
-                        except Exception as sub_error:  # noqa: BLE001
-                            failed.append({"path": sub, "reason": str(sub_error)})
-                else:
-                    r = self._register_one(fp, token)
-                    if r.get("success"):
-                        ok.append(fname)
-                        _collect_id(r)
-                    else:
-                        failed.append({"path": fp, "reason": r.get("reason", "登记失败")})
-            except Exception as file_error:  # noqa: BLE001
-                logger.exception("ingest_local_files one file failed: %s", fp)
-                failed.append({"path": str(fp), "reason": str(file_error)})
-        logger.info("ingest_local_files done: ok=%d failed=%d source_ids=%s", len(ok), len(failed), source_ids)
-
-        # 后台自动推进批次状态：已接入(10%) → 预处理中(50%) → 触发融合 → 已完成(100%)
-        if source_ids:
-            self._advance_batch_status_async(source_ids)
-
+        job_id = job_runner.submit_job(
+            job_type=ingestion_job.JOB_TYPE_INGESTION_PARSE,
+            params={
+                "file_paths": accepted,
+                "operator": self._last_username,
+                "region_code": "510000",
+            },
+            operator_name=self._last_username,
+            page_identifier="data_ingestion_console",
+            source_kind="drop",
+        )
+        logger.info("ingest_local_files 已提交任务 job_id=%s files=%d", job_id, len(accepted))
         return {
-            "success": len(ok) > 0,
-            "accepted": ok,
+            "success": True,
+            "job_id": job_id,
+            "accepted": [os.path.basename(path) for path in accepted],
             "failed": failed,
-            "summary": f"成功登记 {len(ok)} 个文件" + (f"，失败 {len(failed)} 个" if failed else ""),
+            "summary": f"已提交后台任务，共 {len(accepted)} 个文件正在接入",
         }
-
-    def _advance_batch_status_async(self, source_ids):
-        """后台线程：模拟预处理进度推进 + 触发清洗融合 + 最终完成。"""
-        import threading
-        import time
-
-        token = self._last_token
-
-        def _refresh_ui():
-            try:
-                if self._window:
-                    self._window.evaluate_js("if (typeof loadIngestionAll === 'function') loadIngestionAll();")
-            except Exception:  # noqa: BLE001
-                pass
-
-        def _run():
-            from store.data_ingestion_console_store import update_ingestion_record
-            # 1. 1 秒后 → 预处理中 50%
-            time.sleep(1)
-            for sid in source_ids:
-                try:
-                    update_ingestion_record(sid, {"status": "预处理中", "progress": 50})
-                except Exception:  # noqa: BLE001
-                    logger.exception("update %s to processing failed", sid)
-            _refresh_ui()
-            logger.info("批次 %s 进入预处理中(50%)", source_ids)
-
-            # 2. 3 秒后 → 触发清洗融合流水线
-            time.sleep(2)
-            try:
-                self.run_task("run_task_cleaning_fusion_pipeline_9", {"pipeline_id": "PIPELINE_UI_001"}, token)
-                logger.info("已自动触发清洗融合流水线")
-            except Exception:  # noqa: BLE001
-                logger.exception("auto trigger cleaning fusion failed")
-
-            # 3. 6 秒后 → 已完成 100%
-            time.sleep(3)
-            for sid in source_ids:
-                try:
-                    update_ingestion_record(sid, {"status": "已完成", "progress": 100, "term_count": 12})
-                except Exception:  # noqa: BLE001
-                    logger.exception("update %s to done failed", sid)
-            _refresh_ui()
-            logger.info("批次 %s 已完成(100%)", source_ids)
-
-        threading.Thread(target=_run, daemon=True).start()
 
     def pick_files_and_ingest(self) -> Dict[str, Any]:
         """弹原生文件选择框，选完后走真文件登记。"""
@@ -550,6 +407,146 @@ class BridgeApi:
         if not paths:
             return {"success": False, "reason": "已取消选择"}
         return self.ingest_local_files(list(paths))
+
+    # ---- 后台任务（S1）：提交 / 轮询 / 取消 ----
+    _SUPPORTED_JOB_TYPES = frozenset({
+        ingestion_job.JOB_TYPE_INGESTION_PARSE,
+        ingestion_job.JOB_TYPE_INGESTION_REGISTER,
+    })
+
+    @staticmethod
+    def _job_elapsed_ms(job: Dict[str, Any]) -> int:
+        from datetime import datetime, timezone
+
+        started = job.get("started_at")
+        if not started:
+            return 0
+        try:
+            begin = datetime.fromisoformat(str(started))
+        except ValueError:
+            return 0
+        if begin.tzinfo is None:
+            begin = begin.replace(tzinfo=timezone.utc)
+        return max(0, int((datetime.now(timezone.utc) - begin).total_seconds() * 1000))
+
+    def start_job(
+        self,
+        job_type: str,
+        params: Optional[Dict[str, Any]] = None,
+        token: str = "",
+        page_identifier: str = "",
+        source_kind: str = "ui",
+    ) -> Dict[str, Any]:
+        """提交一个后台任务，立刻返回 job_id（前端随后用 get_job 轮询）。"""
+        try:
+            decision = self._authorize("start_job", token)
+        except Exception as guard_error:  # noqa: BLE001
+            logger.exception("start_job authorize failed")
+            return {"success": False, "permitted": False,
+                    "reason": f"鉴权失败: {guard_error}（若提示会话过期请重新登录）"}
+        if not decision.permitted:
+            return {"success": False, "permitted": False, "reason": decision.denial_reason}
+        if job_type not in self._SUPPORTED_JOB_TYPES:
+            return {"success": False, "permitted": True,
+                    "reason": f"未开放的任务类型：{job_type}"}
+        try:
+            active = job_store.list_jobs(
+                job_type=job_type, status=list(job_store.ACTIVE_STATUSES), limit=1
+            )
+            if active:
+                return {"success": True, "permitted": True, "job_id": active[0]["job_id"],
+                        "reused": True, "message": "同类任务正在运行，已复用该任务的进度"}
+            job_id = job_runner.submit_job(
+                job_type=job_type,
+                params=dict(params or {}),
+                operator_name=self._operator_from_token(token),
+                page_identifier=page_identifier or "unknown",
+                source_kind=source_kind,
+            )
+            return {"success": True, "permitted": True, "job_id": job_id}
+        except Exception as submit_error:  # noqa: BLE001
+            logger.exception("start_job submit failed")
+            return {"success": False, "permitted": True, "reason": f"submit_error: {submit_error}"}
+
+    def get_job(self, job_id: str, after_seq: int = 0, token: str = "") -> Dict[str, Any]:
+        """轮询任务快照 + 增量日志（after_seq 之后的部分）。"""
+        try:
+            decision = self._authorize("get_job", token)
+        except Exception as guard_error:  # noqa: BLE001
+            logger.exception("get_job authorize failed")
+            return {"success": False, "permitted": False,
+                    "reason": f"鉴权失败: {guard_error}（若提示会话过期请重新登录）"}
+        if not decision.permitted:
+            return {"success": False, "permitted": False, "reason": decision.denial_reason}
+        try:
+            job = job_store.fetch_job(str(job_id or ""))
+            if not job:
+                return {"success": False, "permitted": True, "reason": "任务不存在"}
+            events = job_store.list_events(str(job_id), after_seq=int(after_seq or 0))
+            snapshot = {
+                key: job.get(key)
+                for key in (
+                    "job_id", "job_type", "status", "stage", "stage_label",
+                    "progress", "message", "error_message", "result",
+                    "created_at", "started_at", "finished_at",
+                )
+            }
+            snapshot["progress"] = int(job.get("progress") or 0)
+            snapshot["elapsed_ms"] = self._job_elapsed_ms(job)
+            progress = snapshot["progress"]
+            if snapshot["status"] == job_store.STATUS_RUNNING and 0 < progress < 100:
+                snapshot["eta_ms"] = int(snapshot["elapsed_ms"] * (100 - progress) / progress)
+            else:
+                snapshot["eta_ms"] = 0
+            return {"success": True, "permitted": True, "job": snapshot, "events": events}
+        except Exception as query_error:  # noqa: BLE001
+            logger.exception("get_job failed")
+            return {"success": False, "permitted": True, "reason": f"query_error: {query_error}"}
+
+    def list_jobs(self, job_type: str = "", limit: int = 20, token: str = "") -> Dict[str, Any]:
+        """列出最近的后台任务（任务中心用）。"""
+        try:
+            decision = self._authorize("list_jobs", token)
+        except Exception as guard_error:  # noqa: BLE001
+            logger.exception("list_jobs authorize failed")
+            return {"success": False, "permitted": False,
+                    "reason": f"鉴权失败: {guard_error}（若提示会话过期请重新登录）"}
+        if not decision.permitted:
+            return {"success": False, "permitted": False, "reason": decision.denial_reason}
+        try:
+            rows = job_store.list_jobs(
+                job_type=(job_type or None), limit=int(limit or 20)
+            )
+            for row in rows:
+                elapsed = self._job_elapsed_ms(row)
+                progress = int(row.get("progress") or 0)
+                row["elapsed_ms"] = elapsed
+                if row.get("status") == job_store.STATUS_RUNNING and 0 < progress < 100:
+                    row["eta_ms"] = int(elapsed * (100 - progress) / progress)
+                else:
+                    row["eta_ms"] = 0
+            return {"success": True, "permitted": True, "jobs": rows}
+        except Exception as query_error:  # noqa: BLE001
+            logger.exception("list_jobs failed")
+            return {"success": False, "permitted": True, "reason": f"query_error: {query_error}"}
+
+    def cancel_job(self, job_id: str, token: str = "") -> Dict[str, Any]:
+        """请求取消：只打标记，任务在下一个阶段边界自行停下。"""
+        try:
+            decision = self._authorize("cancel_job", token)
+        except Exception as guard_error:  # noqa: BLE001
+            logger.exception("cancel_job authorize failed")
+            return {"success": False, "permitted": False,
+                    "reason": f"鉴权失败: {guard_error}（若提示会话过期请重新登录）"}
+        if not decision.permitted:
+            return {"success": False, "permitted": False, "reason": decision.denial_reason}
+        try:
+            ok = job_store.request_cancel(str(job_id or ""))
+            return {"success": bool(ok), "permitted": True,
+                    "message": "已请求取消，等待当前阶段结束" if ok else "任务已结束或不存在"}
+        except Exception as cancel_error:  # noqa: BLE001
+            logger.exception("cancel_job failed")
+            return {"success": False, "permitted": True, "reason": f"cancel_error: {cancel_error}"}
 
     # ---- 清洗融合流水线 ----
     def list_cleaning_tasks(self, task_status: str = "", limit: int = 50) -> Dict[str, Any]:

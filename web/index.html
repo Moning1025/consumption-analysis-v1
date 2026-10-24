@@ -162,6 +162,10 @@
         .status-badge.failed { background: #fee2e2; color: #b91c1c; }
         .progress-wrap { background: #e2e8f0; border-radius: 999px; height: 8px; overflow: hidden; }
         .progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #0e7490, #0891b2); transition: width .4s; }
+        .job-panel { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; background: #f8fafc; }
+        .job-head { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+        .job-meta { font-size: 12px; color: #475569; margin: 8px 0; }
+        .job-log { max-height: 150px; overflow: auto; background: #0f172a; color: #cbd5e1; border-radius: 8px; padding: 10px; font-size: 12px; font-family: Consolas, monospace; margin: 0; white-space: pre-wrap; }
         .mini-form { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 10px; align-items: end; margin-bottom: 16px; }
         .mini-form.two-col { grid-template-columns: 1fr 1fr; }
         .modal-wide { width: 560px; }
@@ -526,6 +530,7 @@ function buildSidebar() {
 }
 
 function renderPage(key) {
+    if (key !== "ingestion") stopJobTracking();
     document.querySelectorAll(".menu-item").forEach(el =>
         el.classList.toggle("active", el.getAttribute("data-key") === key));
     const menu = MENUS.find(m => m.key === key);
@@ -996,6 +1001,15 @@ function renderIngestion(content) {
         <div class="panel">
             <h2>导入预处理进度</h2>
             <div class="sub">反馈当前批次文件解析、格式校验与预处理排队阶段状态。</div>
+            <div class="job-panel" id="jobPanel" style="display:none;">
+                <div class="job-head">
+                    <span id="jobTitle">后台任务</span>
+                    <span id="jobPct">0%</span>
+                </div>
+                <div class="progress-wrap"><div class="progress-fill" id="jobBar" style="width:0%"></div></div>
+                <div class="job-meta" id="jobMeta">等待任务……</div>
+                <pre class="job-log" id="jobLog"></pre>
+            </div>
             <div id="ingProgress"><div style="color:#94a3b8;">加载中……</div></div>
         </div>
         <div class="statusbar">
@@ -1167,12 +1181,13 @@ async function pickFilesAndIngest() {
     try {
         const res = await pywebview.api.pick_files_and_ingest();
         if (!res) { return; }
-        if (res.success) {
-            alert("✅ " + (res.summary || "导入成功"));
+        if (res.success && res.job_id) {
+            trackIngestionJob(res.job_id);
+        } else if (res.success) {
+            loadIngestionAll();
         } else {
             alert("⚠️ " + (res.reason || "已取消"));
         }
-        loadIngestionAll();
     } catch (e) { alert("选择文件失败：" + e); }
 }
 
@@ -1208,9 +1223,87 @@ async function doImport(sourceType, fileExt) {
             alert("无权限或会话已过期，请重新登录后重试");
             return;
         }
-        alert(JSON.stringify(res));
-        loadIngestionAll();
+        if (res && res.job_id) { trackIngestionJob(res.job_id); return; }
+        alert("提交失败：" + (res && res.reason || "未知原因"));
     } catch (e) { alert("导入失败：" + e); }
+}
+
+// ---------------- S1 后台任务轮询（真实进度） ----------------
+const JOB_STATUS_LABELS = { queued: "排队中", running: "运行中", succeeded: "已完成", failed: "失败", canceled: "已取消" };
+let activeJobId = null;
+let activeJobTimer = null;
+let activeJobSeq = 0;
+
+function stopJobTracking() {
+    if (activeJobTimer) { clearInterval(activeJobTimer); activeJobTimer = null; }
+    activeJobId = null;
+    activeJobSeq = 0;
+}
+
+function appendJobLog(line) {
+    const box = document.getElementById("jobLog");
+    if (!box) return;
+    box.textContent += line + "\n";
+    box.scrollTop = box.scrollHeight;
+}
+
+function renderJobPanel(job) {
+    const panel = document.getElementById("jobPanel");
+    if (!panel) return;
+    panel.style.display = "block";
+    const pct = Math.max(0, Math.min(100, Number(job.progress || 0)));
+    const title = document.getElementById("jobTitle");
+    if (title) title.textContent = "后台任务 " + (job.job_id || "");
+    const pctBox = document.getElementById("jobPct");
+    if (pctBox) pctBox.textContent = pct + "%";
+    const bar = document.getElementById("jobBar");
+    if (bar) bar.style.width = pct + "%";
+    const meta = document.getElementById("jobMeta");
+    if (meta) {
+        const status = JOB_STATUS_LABELS[job.status] || job.status || "-";
+        const seconds = ((job.elapsed_ms || 0) / 1000).toFixed(1);
+        const eta = job.eta_ms > 0 ? ("预计剩余 " + (job.eta_ms / 1000).toFixed(1) + " 秒") : "预计剩余 —";
+        meta.textContent = `状态：${status} · 阶段：${job.stage_label || job.stage || "-"} · 已用 ${seconds} 秒 · ${eta} · ${job.message || ""}`;
+    }
+}
+
+async function trackIngestionJob(jobId) {
+    stopJobTracking();
+    activeJobId = jobId;
+    activeJobSeq = 0;
+    const panel = document.getElementById("jobPanel");
+    if (panel) panel.style.display = "block";
+    const log = document.getElementById("jobLog");
+    if (log) log.textContent = "";
+    appendJobLog("[开始] 任务 " + jobId + " 已提交，开始轮询真实进度");
+
+    const poll = async () => {
+        if (!activeJobId) return;
+        try {
+            const res = await pywebview.api.get_job(jobId, activeJobSeq, token);
+            if (!res || !res.success) {
+                appendJobLog("[错误] " + ((res && res.reason) || "查询失败"));
+                stopJobTracking();
+                return;
+            }
+            renderJobPanel(res.job || {});
+            (res.events || []).forEach(ev => {
+                activeJobSeq = Math.max(activeJobSeq, ev.seq || 0);
+                appendJobLog("[" + (ev.level || "INFO") + "] " + (ev.message || ""));
+            });
+            const status = (res.job || {}).status;
+            if (["succeeded", "failed", "canceled"].indexOf(status) >= 0) {
+                appendJobLog("[" + status + "] " + ((res.job || {}).message || ""));
+                stopJobTracking();
+                loadIngestionAll();
+            }
+        } catch (e) {
+            appendJobLog("[异常] " + e);
+            stopJobTracking();
+        }
+    };
+    await poll();
+    if (activeJobId === jobId) activeJobTimer = setInterval(poll, 700);
 }
 
 async function showIngestionDetail(id) {

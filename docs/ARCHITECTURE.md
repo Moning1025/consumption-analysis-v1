@@ -19,6 +19,11 @@
 | 存储 | SQLite（WAL），`local_consumption_insight.db`（417,792 B），13 张表 | `schema.sql`、`store/db_connection.py` |
 | 运行环境 | Windows x64，Python 3.10.9（venv 内 3.10.9，系统同为 3.10.9） | 实测 |
 
+> **运行环境硬约束（S1 期间实测踩坑）**：虚拟环境必须放在项目目录之外，本机固定在 `D:\Python\venv_p3`。
+> 仓库来自压缩包下载，项目目录带 Windows「来自 Internet」标记（MOTW），.NET 拒绝从该路径加载程序集，
+> `webview.start()` 会抛 `RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize`（窗口起不来）。
+> 另外 venv 迁移后 `Scripts\pip.exe` / `python.exe` 里的启动器路径会失效，统一改用 `python -m pip` 调用。
+
 ### 1.2 真实 / 半成品 / 假：逐项判定
 
 | 模块 | 判定 | 关键事实 |
@@ -464,8 +469,8 @@ def _execute(job_id, job_type, params, operator) -> None:
 
 | job_type | 章节 | 输入参数 | 主要产出 |
 |---|---|---|---|
-| `ingestion.parse` | 2.1 / 2.3 | `file_paths[]`、`source_kind` | `ingestion_row`、`ingestion_validation`、批次四态推进 |
-| `ingestion.register` | 2.2.3 | 表单字段 | `data_ingestion_console` 一条（排队中） |
+| `ingestion.parse` ✅ | 2.1 / 2.3 | `file_paths[]`、`operator`、`region_code` | S1 已实现：解包/逐文件解析计数/登记批次（预处理中→已完成），按文件数推进真实进度；S2 再落 `ingestion_row`、`ingestion_validation` |
+| `ingestion.register` ✅ | 2.2.3 | `source_name`、`records[]`（演示数据） | S1 已实现：字段校验 → 登记一条批次 → 100%；S2 起改走真实解析 |
 | `nbs.fetch` | 5.3 | `cids[]`、`period_shards[]` | `ingestion_row`(source_kind=nbs) → 季度/月度宏观序列 |
 | `amap.poi.fetch` | 5.4 | `city`、`adcode`、`grid`、`types` | `merchant_dim` + `ingestion_row`(amap) |
 | `cleaning.fusion` | 3.2 | `batch_identifiers[]` | 7 阶段进度 + `consumption_record` |
@@ -660,7 +665,7 @@ class LlmService:
 | Step | 目标 | 主要产出 | 验收标准 |
 |---|---|---|---|
 | **S0** ✅ | Git 基线（2026-10-24 完成，基线提交 `ea55245`） | `.gitignore` 补 `*.db`/`store/unpacked/`/`.env`/`docs/_tmp/`；移除拼写错误的 `origih` remote；补 `README.md`；`git rm --cached` 清理已入库的 `__pycache__`、`local_consumption_insight.db`、`store/unpacked/`；提交 `docs/tasks/` | `git status` 干净 ✅；`git log` 有基线提交 ✅；GitHub master 与本地 HEAD 一致 ✅ |
-| **S1** | 任务基础设施 | `pipeline/job_runner.py`、`schema_v2.sql`、`store/job_store.py`、`bridge.start_job/get_job/list_jobs/cancel_job`；接入台进度改轮询 | 点“导入数据”后进度条由 `job_run` 驱动；日志面板出现真实阶段；进度不再靠 sleep |
+| **S1** ✅ | 任务基础设施（2026-10-24 完成） | 新增 `pipeline/job_runner.py`（JobContext/线程池 `max_workers=2`/submit_job）、`pipeline/ingestion_job.py`（`ingestion.parse`、`ingestion.register` 两个真实 handler）、`schema_v2.sql`（`job_run`/`job_event`）、`store/job_store.py`、`bridge.start_job/get_job/list_jobs/cancel_job`；接入台进度改为 700ms 轮询 + 真实日志面板 | 点“导入数据/拖文件”后进度条由 `job_run` 驱动 ✅；日志面板出现真实阶段事件 ✅；`list_ingestion_records` 不再按时间伪造进度 ✅；演示任务/真实文件/失败/取消/权限五类路径自测通过 ✅（临时脚本已删） |
 | **S2** | 文件真实解析 | `datasource/file_adapter.py`、`pipeline/ingestion_job.py`（写 `ingestion_row` + 校验报告） | 导入 CSV 后 `ingestion_row` 有 N 行；详情页显示 成功/失败/重复 行数；坏文件给出中文错误而非崩溃 |
 | **S3** | 清洗融合接真实数据 | 改造 `cleaning_fusion_service` 读 `ingestion_row`；**7 阶段**（接入15/去重25/缺失15/对齐15/融合15/校验10/输出5）；写 `consumption_record`（含溯源列）；`cleaning_fusion_job` | 清洗 job 七阶段真实推进；`consumption_record` 行数 = 去重后行数；重复导入不重复入库；日志面板出现 INFO/WARN/ERROR |
 | **S4** | 统计局适配器 | `datasource/nbs_adapter.py` + `spatial_job` 聚合（城市级）；`region_profile`（**默认四川 510000，17 市州**；保留上海 310000 可切换） | 能拉到 profile 对应城市月度社零/人均支出并落库；空间页 KPI/排名来自 DB；断网时优雅降级为本地已有数据 |
@@ -694,7 +699,7 @@ class LlmService:
 1. `pipeline/hotspot_data_fetcher.py:172-266`：`generate_echarts_heatmap_option` / `save_heatmap_data_to_db` 缩进错误（定义在 `fetch_real_consumption_data()` 的 `return` 之后）→ 移到模块顶层。
 2. `store/rfm_segmentation_store.py:206-224`：`rfm_segmentation_studio.id` 为 TEXT PRIMARY KEY 却按 segment 插多行 → 换新表（3.3 方案 A）。
 3. `main.py:120-128`：启动强制“已完成 100%” → 删除，改为只修正 `progress` 超界的脏数据。
-4. `bridge_api.py:173-207`、`bridge_api.py:484-528`：时间/ sleep 假进度 → 由 `job_run` 取代（S1）。
+4. ✅ `bridge_api.py` 时间/ sleep 假进度（原 173-207、484-528 行）→ S1 已删除，改为 `job_run` 驱动。
 5. `bridge_api.py:511-517`：清洗任务缺 `pipeline_task_identifier` 时默认“全部批次”，范围失控 → job 参数必填或显式传 `batch_identifiers`。
 6. `web/index.html:6`：ECharts CDN → 本地 vendor（S9 前必须做，答辩断网）。
 7. `store/account_store.py:53` 等用 `with get_connection() as connection:`：`sqlite3.Connection` 的上下文管理器只提交/回滚、**不关闭连接** → 长期运行泄漏连接（改为 `contextlib.closing` 或统一 `with closing(create_connection()) as conn`）。
@@ -718,3 +723,4 @@ class LlmService:
 | 2026-10-24 | 设计 v1.1 | 合并软著《用户说明书 V1.0》（11 章 49 页）：新增 1.4 功能基线逐章表、1.5 十项差异决策（D1 七阶段清洗/D2 四态/D3 五分层/D4 四预测模型/D5 上海默认 region profile/D6 真实采样/D7 周期可配/D8 增删改审计/D9 三通道召回/D10 数据源规模）；3.2.1 新增 8 张表与 4 组补列；4.2.1 job_type 注册表；6.2.1 情感模型下拉映射；路线图扩为 S0–S12 并加章节对照 | 说明书逐章对照本表；文档评审 |
 | 2026-10-24 | 设计 v1.2 | 按用户拍板修正两处口径：**D5 演示区域改为四川（510000，17 市州），上海 profile 降为可切换对照项**；**D3/S6 明确 RFM 计算层 8 类全量落库、UI 默认展示 5 层归并结果（`app_setting.rfm.display_layers` 可切 5/8）** | 用户明确要求：演示区域用四川；RFM 默认 UI 展示 5 层 |
 | 2026-10-24 | S0 | 仓库基线：重写 `.gitignore`（新增 `*.db`/`store/unpacked/`/`.env`/`docs/_tmp/`）；`git rm --cached` 清掉 45 个构建产物（`__pycache__` 27 个、`local_consumption_insight.db`、`store/unpacked` 17 个样例文件）；新增 `README.md`；删除拼错的 `origih` remote，仅保留 `origin`（SSH）；基线提交 `ea55245` 已推送到 GitHub。注：本机受限沙箱内 Git 经 msys `sh.exe` 调 ssh 会被拒，推送需一次性放宽权限执行 | `git status` 干净；本地 HEAD = 远端 master = `ea55245`；`gh repo view` 显示 pushedAt 已更新 |
+| 2026-10-24 | S1 | 任务基础设施落地：新增 `pipeline/job_runner.py`（`JobContext.report/log/check_cancel`、节流 0.2s、`ThreadPoolExecutor(max_workers=2)`、`submit_job` 立即返回 `job_id`、失败写 `error_message` + ERROR 事件）、`pipeline/ingestion_job.py`（`ingestion.parse`：zip 解包/后缀校验/逐文件解析计数/真实进度；`ingestion.register`：演示批次字段校验）、`schema_v2.sql` 的 `job_run`/`job_event`、`store/job_store.py`；桥接新增 `start_job/get_job/list_jobs/cancel_job` 并补角色矩阵 `/api/job/start|read|cancel`；删除 3 处伪造进度（`list_ingestion_records` 时间推算、`_advance_batch_status_async` sleep 线程、`main.py` 启动强置完成）；`ingest_local_files`/`import_demo_batch` 改为提交后台任务并回传 `job_id`；`main.py` 拖拽回调改为通知前端 `trackIngestionJob(job_id)`；`web/index.html` 新增任务面板（真实进度条/阶段/已用与预计剩余/滚动日志）与 700ms 轮询器 | 自测：演示批次成功（4 条记录）、真实 CSV + zip 导入成功（2 个源、2 条记录、12 条事件）、坏路径任务 `failed` 带中文错误、已结束任务取消返回提示、未知 job_type 被拒、无 token 被拒（角色矩阵生效）；`get_job`/`list_jobs` 的 `elapsed_ms/eta_ms` 正常返回 |

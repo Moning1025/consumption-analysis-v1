@@ -141,9 +141,16 @@ def main():
             if paths:
                 result = bridge.ingest_local_files(paths)
                 logger.info("拖拽文件登记结果: %s", result.get("summary", result))
-                # 通知前端刷新批次清单
+                job_id = (result or {}).get("job_id", "")
+                # S1：把后台任务 id 交给前端，由前端轮询真实进度
                 try:
-                    window.evaluate_js("if (typeof loadIngestionAll === 'function') loadIngestionAll();")
+                    if job_id:
+                        window.evaluate_js(
+                            "if (typeof trackIngestionJob === 'function')"
+                            f" trackIngestionJob('{job_id}');"
+                        )
+                    else:
+                        window.evaluate_js("if (typeof loadIngestionAll === 'function') loadIngestionAll();")
                 except Exception:  # noqa: BLE001
                     logger.exception("前端刷新失败")
         except Exception:  # noqa: BLE001
