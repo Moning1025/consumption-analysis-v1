@@ -45,18 +45,20 @@ logger = logging.getLogger(__name__)
 
 
 def ensure_database_initialized():
-    """初始化SQLite数据库，幂等执行schema.sql建表"""
+    """初始化SQLite数据库，幂等执行 schema.sql + schema_v2.sql 建表。
+
+    S2 修正：此前这里只执行 schema.sql，schema_v2.sql 里的 job_run / job_event /
+    ingestion_row / ingestion_validation 得靠手工跑 scripts/apply_schema.py 才有，
+    换台机器就是“任务一提交就报 no such table”。现在统一走 initialize_schema()。
+    """
     db_file = Path(SQLITE_DATABASE_PATH)
     db_dir = db_file.parent
     db_dir.mkdir(parents=True, exist_ok=True)
 
-    with create_connection() as conn:
-        cursor = conn.cursor()
-        with open(SCHEMA_FILE_PATH, "r", encoding="utf-8") as f:
-            sql_script = f.read()
-        cursor.executescript(sql_script)
-        conn.commit()
-        logger.info("✅数据库表初始化完成")
+    from store.db_connection import initialize_schema
+
+    initialize_schema()
+    logger.info("✅数据库表初始化完成（schema.sql + schema_v2.sql）")
 
 
 def seed_default_administrator():

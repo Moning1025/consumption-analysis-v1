@@ -88,6 +88,7 @@ def register_ingestion_source(payload: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("ingestion source registered id=%s name=%s", source_id, source_name)
         return {
             "source_id": source_id,
+            "batch_identifier": batch_identifier,
             "source_name": source_name,
             "source_type": source_type,
             "endpoint_uri": endpoint_uri,

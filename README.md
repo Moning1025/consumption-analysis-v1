@@ -2,7 +2,7 @@
 
 一个**完全跑在本机**的消费数据分析系统：桌面窗口打开，数据不出本地，从多来源数据导入 → 清洗融合 → RFM / 预测异常 / 空间热力 / 情感主题 / 推荐 → 可视化大屏。
 
-> 毕业设计项目 · 当前处于重构阶段（S0 基线、S1 任务运行器已完成，下一步 S2 真实文件解析）
+> 毕业设计项目 · 当前处于重构阶段（S0 基线、S1 任务运行器、S2 文件真实解析已完成，下一步 S3 清洗融合接真实数据）
 
 ---
 
@@ -57,14 +57,15 @@ main.py                 程序入口：建库、播种管理员、创建窗口�
 bridge_api.py           前后端唯一门面（pywebview JS API）：鉴权 → 校验 → 派发任务
 settings.py             配置（数据库路径、会话密钥、日志级别）
 schema.sql              建表脚本（当前 13 张表）
-schema_v2.sql           S1 新增：任务表 job_run / job_event
+schema_v2.sql           S2：任务表 job_run / job_event + 原始层 ingestion_row / ingestion_validation
 start.bat               一键启动（调用 D:\Python\venv_p3 解释器）
 logging_dict_config.py  日志配置
 auth/                   账号、凭据（PBKDF2）、会话令牌（HMAC）、权限策略、登录审计
 store/                  数据访问层：每张表一个 store 模块，统一走 db_connection
 pipeline/               业务编排：接入、清洗融合、RFM、预测异常、空间热力、情感主题、推荐
   ├ job_runner.py       S1 任务运行器：线程池 + 进度/事件上报 + 取消
-  └ ingestion_job.py    S1 接入任务：ingestion.parse / ingestion.register
+  └ ingestion_job.py    S2 接入任务：ingestion.parse（真实解析）/ ingestion.register
+datasource/             S2 数据源层：base.py（适配器协议）+ file_adapter.py（csv/json/xlsx 流式解析）
 extensions/             可选扩展：大屏 payload 组装、API 探测器（尚未接线）
 web/                    前端单页 + 本地 geo 数据
 docs/                   设计文档（ARCHITECTURE.md）、任务书、agent 规范
@@ -85,7 +86,7 @@ store/unpacked/         导入文件解包目录（运行时生成，不入库�
 |---|---|
 | S0 ✅ | Git 基线：清理构建产物、补 README、同步 GitHub |
 | S1 ✅ | 任务运行器：`job_run` / `job_event` + 真实进度上报 + 前端 700ms 轮询（已替换 sleep 假进度） |
-| S2 | 文件真实解析：CSV/Excel/JSON → 原始层 `ingestion_row` + 校验报告 |
+| S2 ✅ | 文件真实解析：CSV/Excel/JSON/ZIP → 原始层 `ingestion_row` + 校验报告 + 行指纹幂等（坏行给中文理由，同一文件导两次不重复入库） |
 | S3 | 清洗融合接真实数据：7 阶段流水线写规范层 `consumption_record` |
 | S4–S5 | 国家统计局适配器、高德 POI 适配器（真实外部数据） |
 | S6–S9 | RFM、预测异常、LLM 情感主题、三通道推荐 |
@@ -101,7 +102,7 @@ store/unpacked/         导入文件解包目录（运行时生成，不入库�
 
 ## 8. 已知限制（重构中，按路线图逐步解决）
 
-- Excel（`.xlsx` / `.xls`）目前只登记文件、不统计行数（界面显示 0 条），S2 装 `openpyxl` 后补齐。
+- 好行只校验“六列非空”，金额/时间的类型与区域编码合法性尚未校验（S3 清洗阶段补齐）。
 - `start.bat` 与 venv 的绝对路径绑定本机（`D:\Python\venv_p3`）；换机器改路径即可。
 - 数据源目前只有内置演示样例，尚无真实外部数据接入（S4/S5 接入）。
 - 前端 ECharts 仍走 CDN，离线需本地化 `web/vendor/`（S11 前处理）。

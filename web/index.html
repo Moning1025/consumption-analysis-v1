@@ -1008,6 +1008,8 @@ function renderIngestion(content) {
                 </div>
                 <div class="progress-wrap"><div class="progress-fill" id="jobBar" style="width:0%"></div></div>
                 <div class="job-meta" id="jobMeta">等待任务……</div>
+                <div class="job-meta" id="jobResult" style="display:none;"></div>
+                <pre class="job-log" id="jobRows" style="display:none;max-height:120px;"></pre>
                 <pre class="job-log" id="jobLog"></pre>
             </div>
             <div id="ingProgress"><div style="color:#94a3b8;">加载中……</div></div>
@@ -1267,6 +1269,32 @@ function renderJobPanel(job) {
     }
 }
 
+async function renderIngestionResult(job) {
+    const box = document.getElementById("jobResult");
+    const pre = document.getElementById("jobRows");
+    if (!box) return;
+    const r = (job && job.result) || {};
+    if (r.valid_rows == null) {
+        box.style.display = "none";
+        if (pre) pre.style.display = "none";
+        return;
+    }
+    box.style.display = "block";
+    box.textContent = `本次入库 ${r.valid_rows} 行 · 坏行 ${r.error_rows || 0} · 重复跳过 ${r.duplicate_rows || 0} · 文件 ${r.total_files || 0} 个`;
+    const batch = (r.batch_identifiers || [])[0];
+    if (!batch || !pre) return;
+    try {
+        const res = await pywebview.api.list_ingestion_rows(batch, "", 5, 0, token);
+        if (!res || !res.success) { pre.style.display = "none"; return; }
+        const rows = res.rows || [];
+        pre.style.display = "block";
+        pre.textContent = `预览 ${batch} 前 ${rows.length} 行（共 ${(res.counts || {}).total || 0} 行）：\n` +
+            rows.map(row => `第${row.line_no}行 ${row.parse_status === "ok" ? "好行" : "坏行：" + (row.parse_error || "")} ${JSON.stringify(row.raw).slice(0, 110)}`).join("\n");
+    } catch (e) {
+        pre.style.display = "none";
+    }
+}
+
 async function trackIngestionJob(jobId) {
     stopJobTracking();
     activeJobId = jobId;
@@ -1294,6 +1322,7 @@ async function trackIngestionJob(jobId) {
             const status = (res.job || {}).status;
             if (["succeeded", "failed", "canceled"].indexOf(status) >= 0) {
                 appendJobLog("[" + status + "] " + ((res.job || {}).message || ""));
+                if (status === "succeeded") await renderIngestionResult(res.job || {});
                 stopJobTracking();
                 loadIngestionAll();
             }

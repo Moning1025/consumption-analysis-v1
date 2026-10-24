@@ -548,6 +548,73 @@ class BridgeApi:
             logger.exception("cancel_job failed")
             return {"success": False, "permitted": True, "reason": f"cancel_error: {cancel_error}"}
 
+    # ---- 原始数据层（S2）：把真正落库的行和校验报告读回来 ----
+    def list_ingestion_rows(
+        self,
+        batch_identifier: str,
+        status: str = "",
+        limit: int = 100,
+        offset: int = 0,
+        token: str = "",
+    ) -> Dict[str, Any]:
+        """列出某个接入批次落库的原始行（原件、不改写），用于“看看导进来了什么”。"""
+        from store import ingestion_row_store
+
+        try:
+            decision = self._authorize("list_ingestion_rows", token)
+        except Exception as guard_error:  # noqa: BLE001
+            logger.exception("list_ingestion_rows authorize failed")
+            return {"success": False, "permitted": False,
+                    "reason": f"鉴权失败: {guard_error}（若提示会话过期请重新登录）"}
+        if not decision.permitted:
+            return {"success": False, "permitted": False, "reason": decision.denial_reason}
+        batch = str(batch_identifier or "").strip()
+        if not batch:
+            return {"success": False, "permitted": True, "reason": "batch_identifier 不能为空"}
+        try:
+            rows = ingestion_row_store.list_rows(
+                batch, status=status.strip(), limit=int(limit or 100), offset=int(offset or 0)
+            )
+            counts = ingestion_row_store.count_rows(batch)
+            return {
+                "success": True,
+                "permitted": True,
+                "batch_identifier": batch,
+                "rows": rows,
+                "counts": counts,
+                "limit": int(limit or 100),
+                "offset": int(offset or 0),
+            }
+        except Exception as query_error:  # noqa: BLE001
+            logger.exception("list_ingestion_rows failed")
+            return {"success": False, "permitted": True, "reason": f"query_error: {query_error}"}
+
+    def get_ingestion_validation(self, batch_identifier: str, token: str = "") -> Dict[str, Any]:
+        """取某个接入批次的格式校验报告（好行/坏行/重复行 + 明细）。"""
+        from store import ingestion_row_store
+
+        try:
+            decision = self._authorize("get_ingestion_validation", token)
+        except Exception as guard_error:  # noqa: BLE001
+            logger.exception("get_ingestion_validation authorize failed")
+            return {"success": False, "permitted": False,
+                    "reason": f"鉴权失败: {guard_error}（若提示会话过期请重新登录）"}
+        if not decision.permitted:
+            return {"success": False, "permitted": False, "reason": decision.denial_reason}
+        batch = str(batch_identifier or "").strip()
+        if not batch:
+            return {"success": False, "permitted": True, "reason": "batch_identifier 不能为空"}
+        try:
+            report = ingestion_row_store.fetch_validation(batch)
+            if report is None:
+                return {"success": False, "permitted": True,
+                        "reason": "该批次还没有校验报告（可能仍在解析中）"}
+            report["counts"] = ingestion_row_store.count_rows(batch)
+            return {"success": True, "permitted": True, "validation": report}
+        except Exception as query_error:  # noqa: BLE001
+            logger.exception("get_ingestion_validation failed")
+            return {"success": False, "permitted": True, "reason": f"query_error: {query_error}"}
+
     # ---- 清洗融合流水线 ----
     def list_cleaning_tasks(self, task_status: str = "", limit: int = 50) -> Dict[str, Any]:
         """查询清洗融合任务队列（支持按状态过滤）。"""

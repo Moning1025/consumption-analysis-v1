@@ -41,6 +41,8 @@ _ENDPOINT_ACTION_MATRIX = MappingProxyType({
     "/api/job/start": ACTION_EXECUTE,
     "/api/job/read": ACTION_READ,
     "/api/job/cancel": ACTION_EXECUTE,
+    "/api/ingest/rows/read": ACTION_READ,
+    "/api/ingest/validation/read": ACTION_READ,
     "/api/data_ingestion_console/data": ACTION_WRITE,
     "/api/data_ingestion_console/action_2": ACTION_EXECUTE,
     "/api/data_ingestion_console/action_3": ACTION_EXECUTE,
@@ -79,6 +81,7 @@ _GUEST_ENDPOINTS = frozenset({
 _CONSUMER_ENDPOINTS = frozenset({
     "/api/account/profile",
     "/api/job/read",
+    "/api/ingest/validation/read",
     "/api/data_ingestion_console/data",
     "/api/realtime_api_monitor/query",
     "/api/recommendation_workbench/rank",
@@ -89,6 +92,8 @@ _ANALYST_ENDPOINTS = frozenset({
     "/api/job/start",
     "/api/job/read",
     "/api/job/cancel",
+    "/api/ingest/rows/read",
+    "/api/ingest/validation/read",
     "/api/data_ingestion_console/data",
     "/api/data_ingestion_console/action_2",
     "/api/data_ingestion_console/action_3",
@@ -248,6 +253,10 @@ def _bridge_method_to_endpoint(bridge_method_name: str) -> str:
         return "/api/job/cancel"
     if method_name in ("get_job", "list_jobs"):
         return "/api/job/read"
+    if method_name == "list_ingestion_rows":
+        return "/api/ingest/rows/read"
+    if method_name == "get_ingestion_validation":
+        return "/api/ingest/validation/read"
     if method_name.startswith("run_task_cleaning_fusion_pipeline_"):
         return f"/api/cleaning_fusion_pipeline/{method_name}"
     if method_name.startswith("run_task_data_ingestion_console_"):
