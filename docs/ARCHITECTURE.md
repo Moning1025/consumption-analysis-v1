@@ -659,7 +659,7 @@ class LlmService:
 
 | Step | 目标 | 主要产出 | 验收标准 |
 |---|---|---|---|
-| **S0** | Git 基线（用户指定的下一步任务） | `.gitignore` 补 `*.db`、`store/unpacked/`、`.env`；删除拼写错误的 `origih` remote；补 `README.md`；提交 `docs/tasks/` | `git status` 干净；`git log` 有基线提交；GitHub 能看到 |
+| **S0** ✅ | Git 基线（2026-10-24 完成，基线提交 `ea55245`） | `.gitignore` 补 `*.db`/`store/unpacked/`/`.env`/`docs/_tmp/`；移除拼写错误的 `origih` remote；补 `README.md`；`git rm --cached` 清理已入库的 `__pycache__`、`local_consumption_insight.db`、`store/unpacked/`；提交 `docs/tasks/` | `git status` 干净 ✅；`git log` 有基线提交 ✅；GitHub master 与本地 HEAD 一致 ✅ |
 | **S1** | 任务基础设施 | `pipeline/job_runner.py`、`schema_v2.sql`、`store/job_store.py`、`bridge.start_job/get_job/list_jobs/cancel_job`；接入台进度改轮询 | 点“导入数据”后进度条由 `job_run` 驱动；日志面板出现真实阶段；进度不再靠 sleep |
 | **S2** | 文件真实解析 | `datasource/file_adapter.py`、`pipeline/ingestion_job.py`（写 `ingestion_row` + 校验报告） | 导入 CSV 后 `ingestion_row` 有 N 行；详情页显示 成功/失败/重复 行数；坏文件给出中文错误而非崩溃 |
 | **S3** | 清洗融合接真实数据 | 改造 `cleaning_fusion_service` 读 `ingestion_row`；**7 阶段**（接入15/去重25/缺失15/对齐15/融合15/校验10/输出5）；写 `consumption_record`（含溯源列）；`cleaning_fusion_job` | 清洗 job 七阶段真实推进；`consumption_record` 行数 = 去重后行数；重复导入不重复入库；日志面板出现 INFO/WARN/ERROR |
@@ -717,3 +717,4 @@ class LlmService:
 | 2026-10-24 | 设计 | 通读代码，产出本架构文档；确认 3 项根因（无原始层/无任务运行器/无结果回读）与 7 个待修 Bug | 文档评审 |
 | 2026-10-24 | 设计 v1.1 | 合并软著《用户说明书 V1.0》（11 章 49 页）：新增 1.4 功能基线逐章表、1.5 十项差异决策（D1 七阶段清洗/D2 四态/D3 五分层/D4 四预测模型/D5 上海默认 region profile/D6 真实采样/D7 周期可配/D8 增删改审计/D9 三通道召回/D10 数据源规模）；3.2.1 新增 8 张表与 4 组补列；4.2.1 job_type 注册表；6.2.1 情感模型下拉映射；路线图扩为 S0–S12 并加章节对照 | 说明书逐章对照本表；文档评审 |
 | 2026-10-24 | 设计 v1.2 | 按用户拍板修正两处口径：**D5 演示区域改为四川（510000，17 市州），上海 profile 降为可切换对照项**；**D3/S6 明确 RFM 计算层 8 类全量落库、UI 默认展示 5 层归并结果（`app_setting.rfm.display_layers` 可切 5/8）** | 用户明确要求：演示区域用四川；RFM 默认 UI 展示 5 层 |
+| 2026-10-24 | S0 | 仓库基线：重写 `.gitignore`（新增 `*.db`/`store/unpacked/`/`.env`/`docs/_tmp/`）；`git rm --cached` 清掉 45 个构建产物（`__pycache__` 27 个、`local_consumption_insight.db`、`store/unpacked` 17 个样例文件）；新增 `README.md`；删除拼错的 `origih` remote，仅保留 `origin`（SSH）；基线提交 `ea55245` 已推送到 GitHub。注：本机受限沙箱内 Git 经 msys `sh.exe` 调 ssh 会被拒，推送需一次性放宽权限执行 | `git status` 干净；本地 HEAD = 远端 master = `ea55245`；`gh repo view` 显示 pushedAt 已更新 |
