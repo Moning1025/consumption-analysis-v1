@@ -2,7 +2,56 @@ import os
 import sys
 import logging
 import logging.config
+import subprocess
 from pathlib import Path
+
+
+def _ensure_runtime_interpreter():
+    """允许用任意解释器执行 `python main.py`。
+
+    系统自带的 python 里通常没装 pywebview（本项目装在配套虚拟环境里）。
+    检测到缺依赖时，自动切换到项目虚拟环境的解释器重新启动，这样从
+    cmd / PowerShell / 资源管理器 / IDE 里直接 `python main.py` 都能跑起来，
+    不需要先手动激活 venv。
+    """
+    if os.environ.get("LOCAL_ANALYSIS_RELAUNCHED") == "1":
+        return
+
+    import importlib.util
+
+    if importlib.util.find_spec("webview") is not None:
+        return
+
+    project_root = Path(__file__).resolve().parent
+    candidates = [
+        os.environ.get("LOCAL_ANALYSIS_PYTHON"),
+        str(project_root / "venv" / "Scripts" / "python.exe"),
+        str(project_root.parent / "venv_p3" / "Scripts" / "python.exe"),
+        r"D:\Python\venv_p3\Scripts\python.exe",
+    ]
+    for candidate in candidates:
+        if not candidate or not Path(candidate).is_file():
+            continue
+        if Path(candidate) == Path(sys.executable):
+            continue
+        print("[启动] 当前解释器 {} 缺少 pywebview，自动改用 {}".format(sys.executable, candidate))
+        sys.stdout.flush()
+        env = dict(os.environ)
+        env["LOCAL_ANALYSIS_RELAUNCHED"] = "1"
+        raise SystemExit(
+            subprocess.call([candidate, str(Path(__file__).resolve())] + sys.argv[1:], env=env)
+        )
+
+    print(
+        "[启动] 找不到带 pywebview 的 Python 解释器。\n"
+        "       请先执行：python -m venv venv\n"
+        "                 .\\venv\\Scripts\\python.exe -m pip install -r requirements.txt\n"
+        "       或用环境变量 LOCAL_ANALYSIS_PYTHON 指定解释器的完整路径。"
+    )
+    raise SystemExit(1)
+
+
+_ensure_runtime_interpreter()
 
 # settings，完全匹配你现有的settings.py，没有BASE_DIR，直接用PROJECT_ROOT
 from settings import (
