@@ -1301,6 +1301,20 @@ async function trackIngestionJob(jobId) {
     activeJobSeq = 0;
     const panel = document.getElementById("jobPanel");
     if (panel) panel.style.display = "block";
+    // 清空上一次任务遗留的结果区与行预览，避免两次运行的进度/结果“重叠”
+    const resultBox = document.getElementById("jobResult");
+    if (resultBox) { resultBox.style.display = "none"; resultBox.textContent = ""; }
+    const rowsPre = document.getElementById("jobRows");
+    if (rowsPre) { rowsPre.style.display = "none"; rowsPre.textContent = ""; }
+    // 进度条、百分比、元信息复位到“排队中”的零点
+    const bar = document.getElementById("jobBar");
+    if (bar) bar.style.width = "0%";
+    const pctBox = document.getElementById("jobPct");
+    if (pctBox) pctBox.textContent = "0%";
+    const meta = document.getElementById("jobMeta");
+    if (meta) meta.textContent = "状态：排队中 · 阶段：- · 已用 0.0 秒 · 预计剩余 —";
+    const title = document.getElementById("jobTitle");
+    if (title) title.textContent = "后台任务 " + jobId;
     const log = document.getElementById("jobLog");
     if (log) log.textContent = "";
     appendJobLog("[开始] 任务 " + jobId + " 已提交，开始轮询真实进度");
