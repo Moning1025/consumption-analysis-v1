@@ -37,14 +37,12 @@ from store.ingestion_row_store import (
 
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls", ".json", ".zip"}
 
-#: 说明书里“格式校验”阶段要求的列；缺列的行会被计数，但不会阻断整批
+#: 说明书里“格式校验”阶段要求的列。S3 起放宽为三列硬性必填（商户/金额/时间），
+#: 用户标识 / 消费品类 / 城市区域 允许缺，交给清洗阶段“缺失值处理”补默认值。
 REQUIRED_RECORD_FIELDS = (
     "merchant_name",
     "consumption_amount",
     "consumption_time",
-    "user_identifier",
-    "category_label",
-    "city_region",
 )
 
 UNPACK_ROOT = PROJECT_ROOT / "store" / "unpacked"
@@ -302,7 +300,7 @@ def handle_ingestion_parse(context: JobContext, params: Dict[str, Any]) -> Dict[
             "valid_rows": stored["ok"],
             "error_rows": stored["error"],
             "duplicate_rows": duplicate,
-            "missing_field_hint": "商户名称/消费金额/消费时间/用户标识/消费品类/城市区域 六列必须齐全",
+            "missing_field_hint": "商户名称/消费金额/消费时间 三列必须齐全（用户/品类/城市缺失时清洗阶段自动补默认值）",
         }
         validation_codes.append(
             save_validation(

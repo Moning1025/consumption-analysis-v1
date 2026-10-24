@@ -33,14 +33,14 @@ except ImportError:  # pragma: no cover - 依赖缺失分支
 
 SUPPORTED_EXTENSIONS = (".csv", ".json", ".xlsx", ".xls")
 
-#: 说明书“格式校验”阶段要求六个字段齐全
+#: 说明书“格式校验”阶段要求字段齐全。S3 起放宽为「三列硬性必填」：
+#: 商户名称 / 消费金额 / 消费时间 缺一不可（无法靠清洗阶段补），
+#: 用户标识 / 消费品类 / 城市区域 允许缺，由清洗流水线“缺失值处理”阶段补默认值
+#: （匿名用户 / 未分类 / 未知区域）。
 REQUIRED_FIELDS = (
     "merchant_name",
     "consumption_amount",
     "consumption_time",
-    "user_identifier",
-    "category_label",
-    "city_region",
 )
 
 #: 字段的中文说明，坏行提示用

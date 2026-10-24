@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
-from store.db_connection import fetch_all, fetch_one, transaction_scope
+from store.db_connection import fetch_all, fetch_one, stream_rows, transaction_scope
 
 INSERT_CHUNK_SIZE = 500
 
@@ -166,6 +166,43 @@ def save_validation(
             ),
         )
     return validation_code
+
+
+def iter_ok_rows(batch_identifiers: Optional[List[str]] = None) -> Iterable[Dict[str, Any]]:
+    """流式读取 parse_status='ok' 的原始行（清洗流水线 S3 的输入）。
+
+    与 list_rows 的区别：
+    - 不限制单批次：可选 batch_identifiers 过滤，缺省读全库所有成功解析的行；
+    - 流式（stream_rows）：数据量再大也不一次性把整表搬进内存；
+    - 每行多带一个 ``raw`` 字段（raw_json 解包后的字典，即这条消费事件的原文）。
+    """
+    sql = (
+        "SELECT row_id, batch_identifier, source_kind, line_no, raw_json "
+        "FROM ingestion_row WHERE parse_status = 'ok'"
+    )
+    parameters: List[Any] = []
+    if batch_identifiers:
+        placeholders = ", ".join("?" for _ in batch_identifiers)
+        sql += f" AND batch_identifier IN ({placeholders})"
+        parameters.extend(str(identifier) for identifier in batch_identifiers)
+    sql += " ORDER BY row_id"
+    for row in stream_rows(sql, tuple(parameters)):
+        item = dict(row)
+        try:
+            item["raw"] = json.loads(item.pop("raw_json") or "{}")
+        except ValueError:
+            item["raw"] = {}
+        yield item
+
+
+def list_distinct_batches() -> List[str]:
+    """列出 ingestion_row 里出现过的全部批次标识（清洗任务“默认全部批次”用）。"""
+    rows = fetch_all(
+        "SELECT DISTINCT batch_identifier FROM ingestion_row "
+        "WHERE batch_identifier IS NOT NULL AND batch_identifier != '' "
+        "ORDER BY batch_identifier"
+    )
+    return [row["batch_identifier"] for row in rows]
 
 
 def fetch_validation(batch_identifier: str) -> Optional[Dict[str, Any]]:

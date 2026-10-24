@@ -603,11 +603,13 @@ async function doClean() {
         );
         if (res && res.success) {
             const out = (res.data && res.data.handler_output) || {};
-            log(`任务编号 ${out.pipeline_task_identifier || "-"} 执行完成`);
-            log(`状态 ${out.task_status || "succeeded"}　记录数 ${out.record_count ?? "-"}　去重 ${out.deduped_record_count ?? "-"}　涉及消费者 ${out.distinct_consumer_count ?? "-"} 人`);
-            log(`融合总金额 ¥ ${out.total_amount ?? "-"}　耗时 ${out.elapsed_ms ?? (res.data && res.data.elapsed_ms) ?? "-"} ms`);
-            if (out.top_merchants && out.top_merchants.length) {
-                log(`头部商户：${out.top_merchants.slice(0, 3).map(m => m.merchant_name).join("、")}`);
+            const jobId = out.job_id;
+            if (jobId) {
+                log(`已提交后台任务 ${jobId}，请到「清洗融合」页查看实时进度`);
+            } else {
+                log(`任务编号 ${out.pipeline_task_identifier || "-"} 执行完成`);
+                log(`状态 ${out.task_status || "succeeded"}　记录数 ${out.record_count ?? "-"}　去重 ${out.deduped_record_count ?? "-"}　涉及消费者 ${out.distinct_consumer_count ?? "-"} 人`);
+                log(`融合总金额 ¥ ${out.total_amount ?? "-"}　耗时 ${out.elapsed_ms ?? (res.data && res.data.elapsed_ms) ?? "-"} ms`);
             }
         } else {
             log("任务失败：" + (res && res.reason ? res.reason : JSON.stringify(res)), "ERROR");
@@ -659,58 +661,69 @@ function renderCleaning(content) {
             <div class="sub">输出清洗融合过程中的运行日志与异常信息，便于排查数据质量问题。</div>
             <div class="log-box" id="cfLog"></div>
         </div>`;
-    renderCleanStages();
-    cfSeedLog();
+    renderCleanStages(null);
+    cfInitLog();
     loadCleaningTasks();
 }
 
 let cfTaskCache = [];
 
-function renderCleanStages() {
+const CF_STAGES = [
+    { key: "ingest", name: "数据接入", target: 15 },
+    { key: "deduplicate", name: "去重清洗", target: 40 },
+    { key: "impute", name: "缺失值处理", target: 55 },
+    { key: "align", name: "字段对齐", target: 70 },
+    { key: "fuse", name: "多源融合", target: 85 },
+    { key: "validate", name: "质量校验", target: 95 },
+    { key: "output", name: "结果输出", target: 100 },
+];
+const CF_STAGE_KEYS = CF_STAGES.map(s => s.key);
+
+function cfStagePcts(job) {
+    // 由“全局进度 + 当前阶段”反推每个阶段的百分比（当前阶段在前后目标之间插值）
+    if (!job) return CF_STAGES.map(() => 0);
+    if ((job.status || "") === "succeeded") return CF_STAGES.map(() => 100);
+    const progress = Math.min(100, Math.max(0, Number(job.progress || 0)));
+    const cur = CF_STAGE_KEYS.indexOf(job.stage || "");
+    return CF_STAGES.map((s, i) => {
+        const prev = i > 0 ? CF_STAGES[i - 1].target : 0;
+        if (i < cur) return 100;
+        if (i === cur) {
+            const span = s.target - prev;
+            return span > 0 ? Math.round(prev + Math.max(0, progress - prev) / span * 100) : 100;
+        }
+        return 0;
+    });
+}
+
+function renderCleanStages(job) {
     const el = document.getElementById("cfStage");
     if (!el) return;
-    const stages = [
-        { name: "数据接入", pct: 100, desc: "已完成·餐饮、旅游、零售三源数据已全部接入暂存区" },
-        { name: "去重清洗", pct: 86, desc: "运行中·订单号与用户ID去重处理中，预计剩余4分钟" },
-        { name: "缺失值处理", pct: 72, desc: "运行中·餐饮门店编码缺失值按区域均值补全中" },
-        { name: "字段对齐", pct: 58, desc: "运行中·多源字段名与时间单位对齐中，预计剩余6分钟" },
-        { name: "多源融合", pct: 31, desc: "运行中·零售交易与门店维表融合中，预计剩余12分钟" },
-        { name: "质量校验", pct: 0, desc: "排队中·等待融合阶段完成后自动开始" },
-        { name: "结果输出", pct: 0, desc: "排队中·等待质量校验通过后输出结果表" },
-    ];
-    el.innerHTML = stages.map(s => {
-        const fillColor = s.pct >= 100 ? "#0e7490" : (s.pct >= 50 ? "#38bdf8" : (s.pct > 0 ? "#93c5fd" : "#cbd5e1"));
+    const pcts = cfStagePcts(job);
+    const status = job ? (job.status || "") : "idle";
+    const curIdx = job ? CF_STAGE_KEYS.indexOf(job.stage || "") : -1;
+    el.innerHTML = CF_STAGES.map((s, i) => {
+        const pct = pcts[i];
+        let desc = "等待执行";
+        if (!job) desc = "尚未执行，点击任务行「执行任务」开始真实清洗";
+        else if (status === "succeeded") desc = "已完成";
+        else if (status === "failed") desc = "已失败" + (job.message ? "：" + job.message : "");
+        else if (status === "canceled") desc = "已取消";
+        else if (i < curIdx) desc = "已完成";
+        else if (i === curIdx) desc = job.message || "执行中…";
+        const color = pct >= 100 ? "#0e7490" : (pct >= 50 ? "#38bdf8" : (pct > 0 ? "#93c5fd" : "#cbd5e1"));
         return `<div class="stage-item">
-            <div class="prog-head"><span>${s.name}</span><span class="bc-pct">${s.pct}%</span></div>
-            <div class="progress-wrap"><div class="progress-fill" style="width:${s.pct}%;background:${fillColor};"></div></div>
-            <div class="prog-desc">${s.desc}</div>
+            <div class="prog-head"><span>${s.name}</span><span class="bc-pct">${pct}%</span></div>
+            <div class="progress-wrap"><div class="progress-fill" style="width:${pct}%;background:${color};"></div></div>
+            <div class="prog-desc">${esc(desc)}</div>
         </div>`;
     }).join("");
 }
 
-function cfSeedLog() {
+function cfInitLog() {
     const el = document.getElementById("cfLog");
     if (!el) return;
-    const lines = [
-        ["2026-09-13 12:13:35", "INFO", "流水线调度器启动，当前活跃任务数：5"],
-        ["2026-09-13 12:13:28", "INFO", "TASK-20260913-001 餐饮订单去重与缺失值填充 进度更新至 68%"],
-        ["2026-09-13 12:13:20", "INFO", "TASK-20260913-008 餐饮门店地理编码补全 进度更新至 81%"],
-        ["2026-09-13 12:13:12", "WARN", "TASK-20260913-002 旅游评论字段对齐与标准化 发现 37 条评分字段超出有效范围，已标记待复核"],
-        ["2026-09-13 12:13:05", "INFO", "TASK-20260913-011 零售交易金额缺失值填充 进度更新至 57%"],
-        ["2026-09-13 12:12:58", "INFO", "TASK-20260913-016 消费异常检测特征准备 进度更新至 44%"],
-        ["2026-09-13 12:12:46", "ERROR", "TASK-20260913-006 旅游订单金额异常值处理 因源表字段类型不一致暂停，等待人工确认"],
-        ["2026-09-13 12:12:35", "INFO", "TASK-20260913-004 餐饮评论情感标签补充 已完成，输出 64200 条"],
-        ["2026-09-13 12:12:22", "INFO", "TASK-20260913-010 评论主题关键词提取 已完成，输出 85940 条"],
-        ["2026-09-13 12:12:10", "WARN", "TASK-20260913-014 餐饮菜品名称映射 发现 126 条菜品名称无法匹配标准类目，已记录待处理"],
-        ["2026-09-13 12:11:58", "INFO", "TASK-20260913-012 旅游景点名称标准化 已完成，输出 11980 条"],
-        ["2026-09-13 12:11:45", "INFO", "TASK-20260913-005 用户主数据去重合并 已完成，输出 43870 条"],
-        ["2026-09-13 12:11:30", "INFO", "数据接入阶段完成，三源合计 412300 条记录进入清洗队列"],
-        ["2026-09-13 12:11:18", "INFO", "TASK-20260913-003 零售交易多源融合 已加入排队，等待前置清洗任务完成"],
-        ["2026-09-13 12:11:05", "INFO", "TASK-20260913-007 零售商品类目映射 已加入排队，等待前置清洗任务完成"],
-        ["2026-09-13 12:10:52", "INFO", "TASK-20260913-009 多源消费记录时间对齐 已加入排队，等待前置清洗任务完成"],
-        ["2026-09-13 12:10:40", "INFO", "TASK-20260913-013 用户消费频次特征计算 已加入排队，等待前置清洗任务完成"],
-    ];
-    el.innerHTML = lines.map(l => `<div class="log-line ${l[1]}"><span class="ts">${l[0]}</span> [${l[1]}] ${esc(l[2])}</div>`).join("");
+    el.innerHTML = `<div class="log-line INFO"><span class="ts">--</span> 暂无执行日志，点击任务行的「执行任务」开始真实清洗融合</div>`;
 }
 
 function cfAppendLog(level, msg) {
@@ -777,21 +790,77 @@ async function doRunCleaningTask(id) {
     const t = cfTaskCache.find(x => x.pipeline_task_identifier === id);
     if (!t) { alert("未找到任务"); return; }
     const taskId = cleaningTaskIdFor(t.task_kind || "");
-    cfAppendLog("INFO", "调度器分发 " + taskId + "（" + t.task_name + "） …");
+    cfClearLog();
+    renderCleanStages(null);
+    cfAppendLog("INFO", "调度器分发 " + taskId + "（" + (t.task_name || id) + "） …");
     try {
         const payload = taskId === "run_task_cleaning_fusion_pipeline_5"
             ? { pipeline_id: id, pipeline_task_identifier: id, forecast_window_days: 30 }
             : { pipeline_id: id, pipeline_task_identifier: id };
         const res = await pywebview.api.run_task(taskId, payload, token);
         if (res && res.success) {
-            cfAppendLog("INFO", "TASK " + id + " " + (t.task_name || "") + " 执行完成：记录=" + (res.aligned_record_count ?? res.record_count ?? "-"));
+            const out = (res.data && res.data.handler_output) || {};
+            const jobId = out.job_id;
+            if (jobId) {
+                trackCleaningJob(jobId);
+            } else {
+                cfAppendLog("INFO", "任务编号 " + (out.pipeline_task_identifier || "-") + " 执行完成（同步任务）");
+                cfAppendLog("INFO", "返回：" + JSON.stringify(out));
+                loadCleaningTasks();
+            }
         } else {
-            cfAppendLog("ERROR", "TASK " + id + " 执行失败：" + (res && res.reason ? res.reason : JSON.stringify(res)));
+            cfAppendLog("ERROR", "任务失败：" + (res && res.reason ? res.reason : JSON.stringify(res)));
         }
-        loadCleaningTasks();
     } catch (e) {
-        cfAppendLog("ERROR", "TASK " + id + " 执行异常：" + e);
+        cfAppendLog("ERROR", "任务执行异常：" + e);
     }
+}
+
+let cfActiveJobId = null;
+let cfPollSeq = 0;
+let cfPollTimer = null;
+
+function stopCleaningTracking() {
+    cfActiveJobId = null;
+    if (cfPollTimer) { clearTimeout(cfPollTimer); cfPollTimer = null; }
+}
+
+function trackCleaningJob(jobId) {
+    stopCleaningTracking();
+    cfActiveJobId = jobId;
+    cfPollSeq = 0;
+    cfClearLog();
+    cfAppendLog("INFO", "任务 " + jobId + " 已提交，开始轮询真实进度");
+    const poll = async () => {
+        if (!cfActiveJobId) return;
+        try {
+            const res = await pywebview.api.get_job(jobId, cfPollSeq, token);
+            if (!res || !res.success) {
+                cfAppendLog("ERROR", (res && res.reason) || "任务状态查询失败");
+                stopCleaningTracking();
+                return;
+            }
+            const job = res.job || {};
+            renderCleanStages(job);
+            (res.events || []).forEach(ev => {
+                cfPollSeq = Math.max(cfPollSeq, Number(ev.seq || 0));
+                cfAppendLog(ev.level || "INFO", ev.message || "");
+            });
+            const status = job.status;
+            if (["succeeded", "failed", "canceled"].indexOf(status) >= 0) {
+                cfAppendLog(status.toUpperCase(), job.message || status);
+                renderCleanStages(job);
+                stopCleaningTracking();
+                loadCleaningTasks();
+            } else {
+                cfPollTimer = setTimeout(poll, 700);
+            }
+        } catch (e) {
+            cfAppendLog("ERROR", "轮询异常：" + e);
+            stopCleaningTracking();
+        }
+    };
+    cfPollTimer = setTimeout(poll, 350);
 }
 
 function cleaningTaskIdFor(kind) {

@@ -40,8 +40,8 @@ _TASK_PAGE_BINDING: Mapping[str, str] = {
 
 _REQUIRED_PAYLOAD_KEYS: Mapping[str, frozenset] = {
     "run_task_cleaning_fusion_pipeline_5": frozenset({"pipeline_id", "forecast_window_days"}),
-    "run_task_cleaning_fusion_pipeline_9": frozenset({"pipeline_id"}),
-    "run_task_cleaning_fusion_pipeline_15": frozenset({"pipeline_id"}),
+    "run_task_cleaning_fusion_pipeline_9": frozenset(),
+    "run_task_cleaning_fusion_pipeline_15": frozenset(),
     "run_task_cleaning_fusion_pipeline_18": frozenset({"pipeline_id", "sentiment_model", "topic_count", "topic_model"}),
     "run_task_cleaning_fusion_pipeline_21": frozenset({"pipeline_id", "recency_days", "frequency_bins", "monetary_bins"}),
     "run_task_cleaning_fusion_pipeline_24": frozenset({"pipeline_id", "grid_precision"}),

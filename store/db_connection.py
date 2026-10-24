@@ -46,11 +46,53 @@ def create_connection(database_path=None, read_only=False):
     return connection
 
 
+# S3：consumption_record 补的规范层字段（老库缺哪列补哪列，幂等）
+#   字段对齐步骤产出的 9 个规范字段要能完整落库，否则下游 RFM/预测/空间
+#   拿不到 user_identifier / merchant_name / category_label 会断链。
+_S3_CONSUMPTION_RECORD_COLUMNS = (
+    ("merchant_name", "TEXT"),     # 商户名（对齐后的规范名）
+    ("user_identifier", "TEXT"),   # 用户标识（RFM 依赖）
+    ("category_label", "TEXT"),    # 品类标签（融合展示依赖）
+    ("city_region", "TEXT"),       # 城市/区域文本（宏观源 adcode 未接入前的区域维度）
+    ("source_kind", "TEXT"),       # 来源：catering/tourism/retail/nbs/amap/text
+    ("batch_identifier", "TEXT"),  # 来自哪个接入批次（对 data_ingestion_console.batch_identifier）
+    ("raw_row_id", "INTEGER"),     # 来自 ingestion_row.row_id（哪一行原文，可回溯）
+)
+
+
+def _apply_migrations(connection):
+    """启动时给老库补新列（幂等：先查 PRAGMA table_info，缺哪列补哪列）。
+
+    ALTER TABLE ADD COLUMN 重复执行会报 duplicate column，所以不能像建表脚本
+    那样直接 executescript；这里先读表结构，只对缺失的列执行 ALTER。
+    """
+    try:
+        existing_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(consumption_record)").fetchall()
+        }
+    except sqlite3.Error:
+        # consumption_record 尚未创建（例如只跑某个 schema 文件的场景），跳过迁移
+        return
+    for column_name, column_type in _S3_CONSUMPTION_RECORD_COLUMNS:
+        if column_name not in existing_columns:
+            connection.execute(
+                f"ALTER TABLE consumption_record ADD COLUMN {column_name} {column_type}"
+            )
+            logger.info("迁移: consumption_record 补列 %s %s", column_name, column_type)
+    # raw_row_id 全局唯一 → 清洗重复跑也不会重复入库（INSERT OR IGNORE 兜底）
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_consumption_record_raw_row "
+        "ON consumption_record(raw_row_id)"
+    )
+
+
 def initialize_schema(schema_file_path=None, database_path=None):
     """建库建表。
 
-    - 不传 schema_file_path 时，按顺序执行 schema.sql（基础表）与
-      schema_v2.sql（S1 任务表），两者都是幂等脚本；
+    - 不传 schema_file_path 时，按顺序执行 schema.sql（基础表）、schema_v2.sql
+      （S1 任务表 + S2 原始数据层），两者都是幂等脚本；随后跑 _apply_migrations
+      给老库补 S3 起的溯源列；
     - 显式传 schema_file_path 时只执行该文件（自检脚本用临时库时走这条路）。
     """
     project_root = Path(__file__).resolve().parent.parent
@@ -71,6 +113,7 @@ def initialize_schema(schema_file_path=None, database_path=None):
             for path in existing:
                 connection.executescript(path.read_text(encoding="utf-8"))
                 logger.info("数据库 schema 已执行: %s", path.name)
+            _apply_migrations(connection)
     finally:
         connection.close()
 
