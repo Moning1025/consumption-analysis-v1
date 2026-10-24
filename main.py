@@ -117,18 +117,8 @@ def main():
     )
 
     # 启动pywebview桌面窗口
-    # 批量修正：把历史遗留的"已接入/排队中/预处理中"记录全部标记为已完成 100%
-    try:
-        from store.db_connection import transaction_scope
-        with transaction_scope() as conn:
-            cur = conn.execute(
-                "UPDATE data_ingestion_console SET status='已完成', progress=100 "
-                "WHERE status IN ('已接入','排队中','预处理中')"
-            )
-            logger.info("批量修正历史批次状态：%d 条记录已置为已完成(100%%)", cur.rowcount)
-    except Exception:  # noqa: BLE001
-        logger.exception("批量修正历史批次状态失败")
-
+    # 注（S1）：已删除“启动时把进行中批次强制置为已完成 100%”的旧逻辑。
+    # 批次进度改由 job_run 表驱动（任务自己上报），启动时不再篡改任何业务状态。
     import webview
     window = webview.create_window(
         title="多源数据融合的本地消费分析系统 V1.0",

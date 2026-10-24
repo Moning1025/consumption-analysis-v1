@@ -46,16 +46,31 @@ def create_connection(database_path=None, read_only=False):
     return connection
 
 
-def initialize_schema(schema_file_path=None):
-    schema_path = Path(schema_file_path) if schema_file_path else Path(__file__).resolve().parent.parent / "schema.sql"
-    if not schema_path.exists():
-        raise FileNotFoundError(f"schema 文件缺失: {schema_path}")
-    schema_ddl = schema_path.read_text(encoding="utf-8")
-    connection = create_connection()
+def initialize_schema(schema_file_path=None, database_path=None):
+    """建库建表。
+
+    - 不传 schema_file_path 时，按顺序执行 schema.sql（基础表）与
+      schema_v2.sql（S1 任务表），两者都是幂等脚本；
+    - 显式传 schema_file_path 时只执行该文件（自检脚本用临时库时走这条路）。
+    """
+    project_root = Path(__file__).resolve().parent.parent
+    if schema_file_path:
+        schema_paths = [Path(schema_file_path)]
+    else:
+        schema_paths = [project_root / "schema.sql", project_root / "schema_v2.sql"]
+
+    existing = [path for path in schema_paths if path.exists()]
+    if not existing:
+        raise FileNotFoundError(f"schema 文件缺失: {schema_paths[0]}")
+    if schema_file_path and not Path(schema_file_path).exists():
+        raise FileNotFoundError(f"schema 文件缺失: {schema_file_path}")
+
+    connection = create_connection(database_path)
     try:
         with connection:
-            connection.executescript(schema_ddl)
-        logger.info("数据库 schema 初始化完成: %s", schema_path)
+            for path in existing:
+                connection.executescript(path.read_text(encoding="utf-8"))
+                logger.info("数据库 schema 已执行: %s", path.name)
     finally:
         connection.close()
 
