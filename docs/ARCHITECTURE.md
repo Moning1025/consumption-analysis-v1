@@ -1,4 +1,4 @@
-# 多源数据融合的本地消费分析系统 —— 架构设计与开发路线（v1.1）
+# 多源数据融合的本地消费分析系统 —— 架构设计与开发路线（v1.3）
 
 > 状态：设计稿（2026-10-24，已合并软著说明书 V1.0 功能基线）。执行者：DSH 编码 agent；项目所有人：Moning1025（毕设）。
 > 本文档是后续所有改动的**唯一设计基线**：每个 Step 完成后在文末「变更记录」追加一行，并同步更新对应章节。
@@ -189,52 +189,46 @@ CREATE TABLE IF NOT EXISTS data_source (
 );
 
 -- 原始层：一行一条原始记录，永不覆盖（可追溯、可重放）
-CREATE TABLE IF NOT EXISTS ingestion_row (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    batch_identifier TEXT NOT NULL,      -- 关联 data_ingestion_console.batch_identifier
-    source_id INTEGER,
-    row_index INTEGER,
-    row_hash TEXT NOT NULL,              -- sha256(规范化字段拼接)，跨批次去重用
-    raw_json TEXT NOT NULL,
-    parse_status TEXT NOT NULL DEFAULT 'ok',  -- ok | error
-    error_text TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_ingestion_row_batch ON ingestion_row(batch_identifier);
-CREATE INDEX IF NOT EXISTS idx_ingestion_row_hash  ON ingestion_row(row_hash);
+-- ⚠️ 权威定义在 §3.2.1（含 source_kind / line_no / parse_error），此处不再重复列，避免两份 DDL 打架。
+-- 落地进度：S2 已建表（schema_v2.sql）。
 
--- 任务运行记录（真实进度的唯一来源）
+-- 任务运行记录（真实进度的唯一来源）—— 以下是 schema_v2.sql 的实际实现（S1 落地后回写）
 CREATE TABLE IF NOT EXISTS job_run (
-    job_id TEXT PRIMARY KEY,             -- job_<epoch_ms>_<rand4>
-    job_type TEXT NOT NULL,              -- ingestion.parse | cleaning.fusion | rfm.compute | ...
-    params_json TEXT,
-    status TEXT NOT NULL DEFAULT 'queued',  -- queued | running | succeeded | failed | canceled
-    stage TEXT,                          -- parse | normalize | dedup | align | fuse | persist
-    progress_percent INTEGER NOT NULL DEFAULT 0,
-    processed_count INTEGER NOT NULL DEFAULT 0,
-    total_count INTEGER,
-    message TEXT,
-    result_json TEXT,
-    error_text TEXT,
-    operator TEXT,
-    created_at TEXT NOT NULL,
-    started_at TEXT,
-    finished_at TEXT
+    job_id           TEXT PRIMARY KEY,              -- job_<epoch_ms>_<rand4>
+    job_type         TEXT NOT NULL,                 -- ingestion.parse | cleaning.fusion | rfm.compute ...
+    page_identifier  TEXT,                          -- 发起页面
+    status           TEXT NOT NULL DEFAULT 'queued',-- queued/running/succeeded/failed/canceled
+    stage            TEXT,                          -- 当前阶段机器名
+    stage_label      TEXT,                          -- 当前阶段中文名
+    progress         INTEGER NOT NULL DEFAULT 0,    -- 0..100
+    message          TEXT,
+    params_json      TEXT,
+    result_json      TEXT,
+    error_message    TEXT,
+    operator_name    TEXT,
+    source_kind      TEXT,                          -- ui / drop / api / schedule
+    cancel_requested INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT NOT NULL,
+    started_at       TEXT,
+    finished_at      TEXT,
+    updated_at       TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_job_run_status ON job_run(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_job_run_status_created ON job_run(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_job_run_type_created   ON job_run(job_type, created_at DESC);
 
--- 任务事件流（阶段日志，前端轮询增量拉取）
+-- 任务事件流（阶段日志，前端用 after_seq 增量拉取）
 CREATE TABLE IF NOT EXISTS job_event (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_id TEXT NOT NULL,
-    seq INTEGER NOT NULL,
-    ts TEXT NOT NULL,
-    level TEXT NOT NULL DEFAULT 'info',  -- info | stage | warn | error
-    stage TEXT,
-    message TEXT,
-    payload_json TEXT
+    event_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id       TEXT NOT NULL,
+    seq          INTEGER NOT NULL,                  -- 单任务内从 1 递增
+    level        TEXT NOT NULL DEFAULT 'INFO',      -- INFO / WARN / ERROR
+    stage        TEXT,
+    message      TEXT NOT NULL,
+    payload_json TEXT,
+    created_at   TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_job_event_job ON job_event(job_id, seq);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_job_event_job_seq ON job_event(job_id, seq);
+CREATE INDEX IF NOT EXISTS idx_job_event_job ON job_event(job_id, event_id);
 
 -- 商户维度（高德 POI / 文件解析统一落到这里）
 CREATE TABLE IF NOT EXISTS merchant_dim (
@@ -567,6 +561,90 @@ AMAP_DAILY_QUOTA=3000
 
 `.env`（本地、**加入 .gitignore**）+ `.env.example`（入库、只有键名）。禁止把 key 写进 `settings.py` 默认值。
 
+### 5.6 多源扩展设计（"联网自动获取"怎么落，S4/S5 开工前照此填空）
+
+> 结论先行：**先把 S2/S3 的"文件 → 原始行 → 清洗 → 消费明细"打通，再联网**。否则会得到"能拉数但拉进来没法洗、洗了页面还是假的"半成品。
+
+#### 5.6.1 数据分层（现状只有 L1，目标是 5 层）
+
+| 层 | 内容 | 现状 | 联网自动获取 |
+|---|---|---|---|
+| L1 微观交易流水 | 餐饮/旅游/零售消费明细（单笔） | 假数据 `DEMO_SAMPLES` | ❌ 真实 POS 拿不到 → 用公开数据集替代（L5 同源） |
+| L2 宏观统计 | 社零总额、居民人均消费支出、分行业零售额 | 无 | ✅ 国家统计局（免费、权威、答辩最硬） |
+| L3 地理/POI | 商户点位、区县边界、商圈密度 | 无 | ✅ 高德开放平台（3000 次/日） |
+| L4 外部情境因子 | 法定节假日、天气、人流热度 | 无 | ✅ 节假日 JSON 免费；天气用 Open-Meteo（无需 key） |
+| L5 文本/公开数据集 | 评论语料、零售流水公开集 | 无 | ✅ Yelp/Amazon/UCI Online Retail/Instacart（合规、直下） |
+
+答辩口径（一句话）：**"L1 做结构、L2 做总量校准、L3 补空间维度、L4 解释波动、L5 供文本模型"**——这就是"多源融合"的真实含义。
+
+#### 5.6.2 可落地的公开源清单（按性价比排序，S4/S5 直接照做）
+
+| 源 | 取什么 | 取数方式 | 门槛/配额 | 坑与对策 | 落库目标 |
+|---|---|---|---|---|---|
+| 国家统计局 | 月度社零、居民人均消费支出、分行业零售额（可分省） | `cid` 指标编码 + 时间分片（2016–2020 / 2021–2025 / 2026–） | 无 key；有频控 | 返回结构非标准，按 `returndata.datanodes` 解析；请求间隔 ≥500ms | `consumption_record`（`source_kind='nbs'`）+ `ingestion_raw` |
+| 高德 Web 服务 | POI 搜索 v5(2.0)、行政区划、地理编码、路径距离 | 城市 → 区县 adcode → 矩形网格（步长 ≈0.02°） | 免费 key；3000 次/日、单次 ≤200 条 | 一市全量必爆配额 → 网格切块 + 本地缓存 7 天 | `merchant_dim` + `ingestion_raw` |
+| Open-Meteo | 历史/预报温度、降水 | 单次 REST，多日批量 | 免费、无需 key | 无 | 情境因子表（可先存 `ingestion_row`） |
+| 节假日公开 JSON | 法定节假日、调休日历 | 静态文件拉取 | 免费 | 一年一更，做 7 天缓存 | `app_setting` 或因子表 |
+| DataV GeoAtlas | 省/市/区县边界 GeoJSON | 静态文件 | 免费 | 与现有 `sichuan_geo.json` 同源，可换上海/全国 | `web/geo/*.json`（本地化，不进 CDN） |
+| 公开消费数据集 | 评论语料、零售流水 | 手动下载后走文件适配器 | 免费 | 字段口径不同 → 正好练"字段对齐"阶段 | 走 S2 文件通道，不写专用适配器 |
+| 微博/知乎热榜 | 消费话题热点（舆情佐证） | 已有站点适配器 | 免费 | **只作佐证，不当消费数据** | `ingestion_row`（`source_kind='trend'`） |
+
+**明确不做**：大众点评 / 美团 / 淘宝 — 反爬强 + 合规风险，毕设不值得冒险。
+
+#### 5.6.3 让"多源"成为系统的 6 个机制（比堆源更重要）
+
+1. **数据源注册表** `data_source`：一行一个源，记 `kind / license / rate_limit / refresh_cron / field_map_json / trust_weight / watermark_json / last_synced_at`。第 10 章"融合数据源规模"指标 = `COUNT(DISTINCT source_id)` 真实统计。
+2. **调度 + 水位线**：`refresh_cron`（复用第 11 章"调度表达式"参数）+ `watermark_json`（已拉到哪个月、哪个网格、哪个 page）。**只做增量**，全量重拉等于自杀。
+3. **幂等去重**：原始行算 `row_hash = sha256(规范化字段)`，唯一索引 `(source_id, row_hash)`。定时任务跑 100 次不会重复入库（统计局/高德都会重复返回同一条）。
+4. **原始响应存档** `ingestion_raw`：`request_json / response_hash / raw_text / fetched_at`。被问"这数哪来的"能点开看原文——这是可复核性的底线。
+5. **离线快照**：每次联网抓取落本地快照，`data_source.mode='snapshot'` 时直接读快照。**答辩断网保命**。
+6. **血缘与"点数字看来源"**：`consumption_record.source_kind / batch_identifier / raw_row_id` 已预留；前端指标卡浮层显示"该数字来自 X 源 / Y 批次 / 抓取时间"。
+
+补充一条融合口径（加分项）：**宏观校准微观** —— 用统计局"某市某月社零总额"作为校准系数，把本地流水按比例缩放至与宏观一致；微观保结构、宏观保总量。权重记在 `data_source.trust_weight`，可配。
+
+#### 5.6.4 需补进 `schema_v2.sql` 的两张表（3.2 节追加，S4 前建）
+
+```sql
+CREATE TABLE IF NOT EXISTS ingestion_raw (          -- 原始响应存档（可复核）
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id TEXT NOT NULL,
+  job_id TEXT,
+  request_json TEXT NOT NULL,      -- 请求参数快照（可复现）
+  response_hash TEXT NOT NULL,     -- sha256(raw_text)
+  raw_text TEXT NOT NULL,          -- 原文（JSON/CSV 文本）
+  row_count INTEGER DEFAULT 0,
+  fetched_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(source_id, response_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_raw_source_time ON ingestion_raw(source_id, fetched_at);
+
+CREATE TABLE IF NOT EXISTS sync_watermark (          -- 增量位点（也可用 data_source.watermark_json）
+  source_id TEXT NOT NULL,
+  scope_key TEXT NOT NULL,         -- 如 '510100|monthly_social_retail'
+  cursor_value TEXT NOT NULL,      -- 如 '2025-09' 或 'page=7'
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(source_id, scope_key)
+);
+```
+
+同步任务本身**不新增表**：复用 `job_run`（`job_type='sync.nbs'` / `'sync.amap'`）+ `job_event`，进度与日志前端原样复用 S1 的任务面板。
+
+#### 5.6.5 落地节奏（与第 8 章路线图对齐，不要一次全上）
+
+| 阶段 | 做什么 | 验收 |
+|---|---|---|
+| S2 / S3（当前） | 文件适配器 + `ingestion_row` + 7 阶段清洗 | 一条链真通，先不联网 |
+| **S4** | 统计局：只做"社会消费品零售总额"一个指标族（分省月度） | 断网/联网两种状态都可演示 |
+| **S5** | 高德：3 个别区 × 3 个品类关键词，网格切块 + 缓存 | 重复执行不耗配额；配额用尽有中文提示 |
+| **S6**（附加半天） | 节假日 + 天气两个小 JSON | 情境因子进预测解释 |
+| **S11** | 设置页"调度表达式"接真调度器（APScheduler 或自建 cron 线程）；数据源管理页可手动触发/看水位线/看失败 | "自动获取"四个字真正落地 |
+
+#### 5.6.6 合规红线（写代码前先记住）
+
+- 只调公开 API / 公开页面；遵守 robots 与配额；请求间隔与 UA 规整。
+- 不采集个人身份信息；评论语料只用公开数据集或公开页面摘要，注明来源与清洗方式。
+- 每条外部数据必须带 `source_id + fetched_at`，答辩材料里的截图与库内数据能对上。
+
 ---
 
 ## 6. LLM 接口（预留，先可插拔后接真实模型）
@@ -724,3 +802,5 @@ class LlmService:
 | 2026-10-24 | 设计 v1.2 | 按用户拍板修正两处口径：**D5 演示区域改为四川（510000，17 市州），上海 profile 降为可切换对照项**；**D3/S6 明确 RFM 计算层 8 类全量落库、UI 默认展示 5 层归并结果（`app_setting.rfm.display_layers` 可切 5/8）** | 用户明确要求：演示区域用四川；RFM 默认 UI 展示 5 层 |
 | 2026-10-24 | S0 | 仓库基线：重写 `.gitignore`（新增 `*.db`/`store/unpacked/`/`.env`/`docs/_tmp/`）；`git rm --cached` 清掉 45 个构建产物（`__pycache__` 27 个、`local_consumption_insight.db`、`store/unpacked` 17 个样例文件）；新增 `README.md`；删除拼错的 `origih` remote，仅保留 `origin`（SSH）；基线提交 `ea55245` 已推送到 GitHub。注：本机受限沙箱内 Git 经 msys `sh.exe` 调 ssh 会被拒，推送需一次性放宽权限执行 | `git status` 干净；本地 HEAD = 远端 master = `ea55245`；`gh repo view` 显示 pushedAt 已更新 |
 | 2026-10-24 | S1 | 任务基础设施落地：新增 `pipeline/job_runner.py`（`JobContext.report/log/check_cancel`、节流 0.2s、`ThreadPoolExecutor(max_workers=2)`、`submit_job` 立即返回 `job_id`、失败写 `error_message` + ERROR 事件）、`pipeline/ingestion_job.py`（`ingestion.parse`：zip 解包/后缀校验/逐文件解析计数/真实进度；`ingestion.register`：演示批次字段校验）、`schema_v2.sql` 的 `job_run`/`job_event`、`store/job_store.py`；桥接新增 `start_job/get_job/list_jobs/cancel_job` 并补角色矩阵 `/api/job/start|read|cancel`；删除 3 处伪造进度（`list_ingestion_records` 时间推算、`_advance_batch_status_async` sleep 线程、`main.py` 启动强置完成）；`ingest_local_files`/`import_demo_batch` 改为提交后台任务并回传 `job_id`；`main.py` 拖拽回调改为通知前端 `trackIngestionJob(job_id)`；`web/index.html` 新增任务面板（真实进度条/阶段/已用与预计剩余/滚动日志）与 700ms 轮询器 | 自测：演示批次成功（4 条记录）、真实 CSV + zip 导入成功（2 个源、2 条记录、12 条事件）、坏路径任务 `failed` 带中文错误、已结束任务取消返回提示、未知 job_type 被拒、无 token 被拒（角色矩阵生效）；`get_job`/`list_jobs` 的 `elapsed_ms/eta_ms` 正常返回 |
+| 2026-10-24 | 设计 v1.3 | 新增 **5.6 多源扩展设计**（用户要求"多源数据还能怎么优化，比如联网自动获取"落进总设计）：5.6.1 五层数据分层（L1 流水/L2 宏观/L3 POI/L4 情境/L5 文本数据集）；5.6.2 七个可落地公开源清单（统计局 cid+时间分片、高德网格切块+配额、Open-Meteo、节假日 JSON、DataV GeoAtlas、公开数据集、热榜；明确不做点评/美团/淘宝）；5.6.3 六个机制（源注册表 / 调度+水位线增量 / `row_hash` 幂等 / `ingestion_raw` 原文存档 / 离线快照 / 血缘"点数字看来源"）+ 宏观校准微观口径；5.6.4 追加两张表 `ingestion_raw`、`sync_watermark`（同步任务复用 `job_run`/`job_event`，不新增表）；5.6.5 节奏（S2/S3 先打通再联网，S4 只做一个指标族，S5 网格+缓存，S11 接真调度器）；5.6.6 合规红线 | 文档评审；S4/S5 开工时按 5.6.2 表格逐行填空验收 |
+| 2026-10-24 | 设计 v1.3.1（文档对齐） | 清掉两处**文档与实现打架**：① §3.2 的 `job_run`/`job_event` DDL 按实际 `schema_v2.sql` 回写（真列名 `progress/stage_label/cancel_requested/operator_name/error_message/updated_at`、事件表 `event_id/created_at`）；② `ingestion_row` 在 §3.2 与 §3.2.1 各定义一遍且列名不同 → §3.2 删重复、留指针，**以 §3.2.1 为权威**（含 `source_kind/line_no/parse_error`） | `docs/ARCHITECTURE.md` 与 `schema_v2.sql` 逐列比对一致；S2 按 §3.2.1 建表 |
