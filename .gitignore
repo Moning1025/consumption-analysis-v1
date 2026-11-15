@@ -25,6 +25,19 @@ env/
 *.sqlite3
 store/unpacked/
 
+# ---- 外部原始数据（2.06 GB，绝不入库）----
+# 遥感栅格与国家/省/市年鉴原件体积过大（单个 TIF 533 MB、人口 TIF 878 MB、路网 shp 178 MB），
+# GitHub 单文件上限 100 MB，一旦误提交仓库就再也瘦不回来。
+# 这些文件的获取方式写进 docs/ROADMAP.md 的 S2-1b / S2-1d，本地重下即可。
+data_raw/
+*.tif
+*.tiff
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+
 # ---- 密钥与本地配置 ----
 .env
 .env.*

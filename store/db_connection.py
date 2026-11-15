@@ -91,15 +91,27 @@ def initialize_schema(schema_file_path=None, database_path=None):
     """建库建表。
 
     - 不传 schema_file_path 时，按顺序执行 schema.sql（基础表）、schema_v2.sql
-      （S1 任务表 + S2 原始数据层），两者都是幂等脚本；随后跑 _apply_migrations
-      给老库补 S3 起的溯源列；
+      （S1 任务表 + S2 原始数据层）、schema_v3.sql（S2-1a 高德 POI 接入）、
+      schema_v4.sql（S2-1b 统计年鉴导入）、schema_v5.sql（S2-1d 空间网格底盘）、
+      schema_v6.sql（S2-1c Olist 流水导入账本），
+      全部是幂等脚本；随后跑 _apply_migrations 给老库补 S3 起的溯源列；
+    - 注意：consumption_record 的 external_id / region_profile 两列不在这批 schema 里，
+      因为 SQLite 的 ALTER TABLE ADD COLUMN 不幂等；由 scripts/import_olist.py 的
+      ensure_consumption_record_columns() 用 PRAGMA 检查后按需补；
     - 显式传 schema_file_path 时只执行该文件（自检脚本用临时库时走这条路）。
     """
     project_root = Path(__file__).resolve().parent.parent
     if schema_file_path:
         schema_paths = [Path(schema_file_path)]
     else:
-        schema_paths = [project_root / "schema.sql", project_root / "schema_v2.sql"]
+        schema_paths = [
+            project_root / "schema.sql",
+            project_root / "schema_v2.sql",
+            project_root / "schema_v3.sql",
+            project_root / "schema_v4.sql",
+            project_root / "schema_v5.sql",
+            project_root / "schema_v6.sql",
+        ]
 
     existing = [path for path in schema_paths if path.exists()]
     if not existing:

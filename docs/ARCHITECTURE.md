@@ -439,6 +439,27 @@ def _execute(job_id, job_type, params, operator) -> None:
 - handler 注册表与 `task_dispatch_service._TASK_DISPATCH_TABLE` 解耦：**新 job_type 用新表 `_JOB_HANDLERS`**，旧 `run_task` 保留兼容（内部转成同步执行，避免破坏已通过的验证脚本）。
 - 取消：`cancel_job(job_id)` 置 `status='canceled'`，handler 在每个阶段边界 `ctx.check_cancel()`。
 
+### 4.1.1 执行账本（2026-11-12 定：进度条升级为"可核对的账"）
+
+**问题**：`progress=60%` 只能证明"它说它跑到 60%"，评审一句"这进度条是真的吗"就能把场子问死。
+**解法**：每个阶段结束，除了进度，**再写一行账**——进来多少行、留下多少行、丢掉多少、为什么丢、花了多久。账在 `job_event.payload_json` 里，字段名冻结：
+
+```json
+{"input_rows": 100000, "output_rows": 96281, "dropped_rows": 3719,
+ "drop_reasons": {"missing_amount": 2870, "duplicate": 720, "invalid_date": 129},
+ "elapsed_ms": 1840}
+```
+
+| 键 | 类型 | 约束 |
+|---|---|---|
+| `input_rows` / `output_rows` / `dropped_rows` | int | 必须满足 `input - output = dropped`，否则验收脚本直接报错 |
+| `drop_reasons` | dict[str,int] | 键用 `snake_case` 英文，**值之和必须等于 `dropped_rows`**（前端图例直接读键名，所以不许随意起名） |
+| `elapsed_ms` | int | 本阶段实测耗时，不许写常量 |
+
+合并任务（`cleaning.run`）在 `result_json` 里再存一份汇总账本：7 个阶段的 payload 数组 + 总耗时 + 总输入/总输出。
+
+**为什么这是"深度"而不是"花活"**：它把"任务在跑"变成"任务跑了什么可以被核对"。前端渲染成一行字——「读 100000 → 留 96281，丢 3719（缺金额 2870 / 重复 720 / 日期非法 129）」——答辩时这句话比任何进度条动画都有分量，因为它**可被反查**（每行账都对应一条 `job_event`，可以在数据库里指着看）。
+
 ### 4.2 桥接 API 新增（都要 `token` 鉴权 + 角色矩阵补 endpoint）
 
 | 方法 | 入参 | 返回 |
@@ -530,20 +551,22 @@ class DataSourceAdapter(Protocol):
 - 列名别名表复用 `cleaning_fusion_service.FIELD_ALIAS_TABLE`；解析出 `row_index, raw_json, row_hash`，坏行写 `parse_status='error'` 而非整批失败。
 - 产出“校验报告”：总行数/成功/失败/缺列/重复 hash 数，前端在批次详情里展示。
 
-### 5.3 国家统计局（国家数据）适配器
+### 5.3 省市开放数据平台适配器（2026-11-12 改：统计局降为对照）
 
-- 入口：`https://data.stats.gov.cn/dg/website/publicrelease/web/external`（公开，无需登录）。
-- 机制：`cid`（指标集合 UUID，从目录树接口发现）+ 时间分片（2016–2020 / 2021–2025 / 2026–），返回 JSON 后按 `code/name/value` 归一。
-- 目标指标（建议）：社会消费品零售总额、居民人均消费支出、分行业零售额（餐饮/零售/旅游相关）。
-- 落库形态：`consumption_record`（region_code=行政区划码，occurred_date=期末日期，amount=金额，source_kind='nbs'）；粒度是**城市/省/月**，不是单笔订单——这点在毕设里要说清楚“宏观指标 + 微观流水”的融合。
-- 合规：只取公开汇总字段；请求间隔 ≥500ms；失败重试 2 次；把 `cid/period` 写进 `job_event` 便于复核。
+- **优先级 1｜成都公共数据开放平台**：区（市）县级社会消费品零售总额（CSV/JSON）。这是核心——**区县级需求**才能和高德 POI 的**区县级供给**对齐，算出蓝海/红海。
+- **优先级 2｜四川省公共数据开放网**：全省社零 API，做宏观大盘。
+- **优先级 3｜国家统计局**：只取全国大盘做对照；入口 `https://data.stats.gov.cn/dg/website/publicrelease/web/external`（公开，无需登录），`cid`（指标集合 UUID）+ 时间分片，返回 JSON 按 `code/name/value` 归一。
+- **行业报告**（成都商圈蓝皮书等）：**不写代码抓取**，只做 S8 答辩的旁证数据。
+- 统一落 `region_consumption_monthly`（`indicator_code` + `granularity`(district/city/province/nation) + `region_code` + `period` + `value` + `unit` + `source` + `raw_json`，主键 `(indicator_code, region_code, period)`）。**为什么统一一张表**：三个来源粒度不同，各建一表则蓝海红海要 union 三次；统一后一条 SQL 可跨粒度对比。
+- 合规：只取公开汇总字段；请求间隔 ≥500ms；失败重试 2 次；把 `indicator/period/region` 写进账本便于复核；部分平台需实名注册，**注册前先向老大报备**。
 
-### 5.4 高德 POI 适配器
+### 5.4 高德 POI 适配器（✅ S2-1a 已实现）
 
 - 用途：商户/门店维度（餐饮 050000、购物 060000、生活服务 070000 等细类），以及网格密度；**不做消费金额**（高德没有交易数据）。
-- 配额：个人开发者 3000 次/日、单次最多 200 条（以控制台实际为准，代码里做 `AMAP_DAILY_QUOTA` 软限制 + 本地缓存 7 天）。
-- 分块：按城市 → 区县 adcode → 矩形网格（lng/lat 步长约 0.02°）拉取，`types` 用细分码，结果写 `merchant_dim` + `ingestion_row`（source_kind='amap'）。
-- 结算：`heat_score = 0.6*POI密度分 + 0.4*统计公报消费额分`（权重可配，写进 `data_source.config_json`）。
+- 实测接口：`GET https://restapi.amap.com/v3/place/text`（`keywords` / `types` / `city` / `citylimit` / `offset`≤25 / `page`≤100 / `extensions=all`）。不用 v5：字段不如 v3 稳、示例少；`/place/around` 留到 S2-2 做网格补齐。
+- 实现：`datasource/amap_adapter.py` 的 `AmapClient`（`requests.Session` + `timeout=5s` + `min_interval=0.35s` 节流 + 网络/限流重试 + `ERROR_MESSAGE` 错误码翻译），`parse_poi()` 把 `"lng,lat"` 拆成 `longitude/latitude`、`"餐饮服务;中餐厅"` 拆成 `category_l1/l2`。
+- 落库：`poi_merchant`（主键 `poi_id`，幂等 upsert）+ `poi_fetch_batch`（批次）+ `poi_fetch_log`（每请求一行账本，守恒 `返回 = 新增 + 覆盖 + 跳过`）。
+- 结算：`heat_score = 0.6*POI密度分 + 0.4*统计公报消费额分`（权重可配，写进配置档；答辩口径：可配置经验参数，后续可引入熵权法客观赋权）。
 
 ### 5.5 密钥与配置
 
@@ -645,6 +668,39 @@ CREATE TABLE IF NOT EXISTS sync_watermark (          -- 增量位点（也可用
 - 不采集个人身份信息；评论语料只用公开数据集或公开页面摘要，注明来源与清洗方式。
 - 每条外部数据必须带 `source_id + fetched_at`，答辩材料里的截图与库内数据能对上。
 
+### 5.7 Olist 交易流水（"本地流水"这一源的真实替代物）
+
+**为什么需要它**：系统讲的"三源融合"是——供给（高德 POI）、宏观消费（统计局）、**微观交易流水**（本地商家 Excel）。第三源如果一直是平台自带的 5 行演示数据，"融合"就是两张宏观表在自娱自乐，7 阶段清洗也没有真实脏数据可洗。Olist 公开数据集（Kaggle，约 10 万笔巴西电商订单）把这一源补成真实数据。
+
+**它不是什么**（必须写进论文与答辩口径）：
+- **不是四川数据**。Olist 的城市是圣保罗、里约等巴西城市，绝不允许改写成四川城市混进地图。
+- **不是"我爬来的交易数据"**。它是公开学术数据集，来源可查、可引用。
+
+**它怎么进系统**（与 5.1 适配器协议一致）：
+
+```
+consumption_record
+  order_id + order_item_id  → 幂等键（一单多件 = 多行明细）
+  seller_id                 → merchant_name = 'Olist卖家-<id>'
+  price + freight_value     → consumption_amount
+  product_category_name     → category_label（葡语→中文映射，40+ 类）
+  customer_city + state     → city_region（保留原文，如 'sao paulo/SP'）
+  order_purchase_timestamp  → occurred_date（取前 10 位）
+  —                         → source_kind = 'olist'
+  —                         → region_profile = 'olist-br'
+```
+
+**profile 隔离（架构约束，不是建议）**：`region_profile` 是 2026-11-12 新增的架构级列。
+
+| profile | 含义 | 谁读它 |
+|---|---|---|
+| `sichuan` | 四川本地数据（POI / 统计 / 本地 Excel） | 地图、消费看板、RFM、选址建议——**默认全部只读这个** |
+| `olist-br` | Olist 巴西公开数据集 | 只被三处读：① 清洗阶段（作为脏数据输入）② 规模实验（10 万/100 万）③ "数据源管理"页的示例数据集卡片 |
+
+> 这样设计的理由：**同一个数据库里可以存在"不可混算"的两套地域体系**，靠一列 profile 物理隔开，而不是靠人记着"这个表别拿去做地图"。答辩被问"你导入的巴西数据怎么处理"时，答"它有自己的 profile，默认不进入四川分析口径"，是能站住的架构回答；答"我把它映射成四川了"是造假。
+
+**清洗价值**：这份数据自带真实缺陷——葡语品类名（需要映射表）、`order_delivered_customer_date` 大量为空、订单与明细一对多、同一订单多条评价。正好是 S3 七个阶段（接入/去重/缺失值/对齐/融合/质量校验/输出）的天然输入，比洗干净的假数据有说服力得多。
+
 ---
 
 ## 6. LLM 接口（预留，先可插拔后接真实模型）
@@ -733,12 +789,17 @@ class LlmService:
 5. **空间页**：删除 `fetch('heatmap_data.json')`，改 `pywebview.api.get_spatial_payload(token)`；无数据时显示“请先接入数据并执行空间聚合”。
 6. **大屏**：改 `get_dashboard_payload(token)`，ECharts 4 图（趋势/分层饼/热力/情感），数据为空时显示空态而不是假数字。
 7. **设置页**：参数真正保存到 `data_source.config_json` / `settings` 表（新增 `app_setting(key,value)` 或在 `data_source` 存 JSON）；LLM 配置区显示“已启用/基线模式”。
+8. **执行账本展示（2026-11-12 新增）**：进度条右侧固定一行账本文字，数据来自 `job_event.payload_json`（5 键冻结结构，见 4.1.1），渲染成「读 100000 → 留 96281，丢 3719（缺金额 2870 / 重复 720 / 日期非法 129）」。**没有账本时不显示占位数字**，显示“本次任务未产生账本”。
+9. **前端资源本地化（2026-11-12 新增）**：`web/index.html:6` 的 jsDelivr CDN 必须换成本地 `<script src="vendor/echarts.min.js">` + `vendor/echarts-gl.min.js`；`web/vendor/` 与 `web/geo/` 一起入库（体积约 1.6 MB，可接受）。**断网白屏的根因就是这一行 CDN**，答辩现场断网是最容易发生的事故。
+10. **视觉标准（2026-11-12 冻结，详见 ROADMAP S4「视觉标准」表）**：深色科技风（`#0A1128` / 青 `#22D3EE` / 紫 `#7C3AED`）、ECharts-GL `map3D` 2.5D 抬升 + 双层发光边界 + 呼吸态高亮、KPI 数字翻牌器（手写 20 行 JS）、省会↔选中市 1 条 `lines3D` 飞线、点击地级市下钻区县。**不引入 DataV 组件库**（Vue 2 组件，与原生 JS + pywebview 架构冲突）；GeoJSON 可从阿里 DataV.GeoAtlas 取，只取数据不取组件。
 
 ---
 
 ## 8. 开发路线图（每步都可独立验收，按依赖排序）
 
 > 原则：每步结束项目必须能 `python main.py` 正常打开并演示；不允许“半截状态”。每步产出后更新本文档「变更记录」。
+>
+> ⚠️ **编号口径说明（2026-11-12）**：本节表格里 S0–S8 是**旧编号**（按说明书章节推进：S4=统计局、S5=高德……）。**真正的排期与工时以 `docs/ROADMAP.md` 为准**（S2-1a 高德 / S2-1b 统计局 / S2-1c Olist / S2-2 归一化 / S3 清洗 / S4 前端 / S5 MySQL / S6 优化 / S7 Spark / S8 材料）。本表保留作为"功能完成度台账"，不再用于排期。两套编号的对应关系：本节 S4+S5+S6 ≈ ROADMAP 的 S2-1a+S2-1b+S2-2。
 
 | Step | 目标 | 主要产出 | 验收标准 |
 |---|---|---|---|
@@ -786,7 +847,7 @@ class LlmService:
 
 ## 9. 风险与答辩要点
 
-- **数据真实性**：统计局是宏观汇总、高德是 POI 维度，二者都不能提供“单笔订单流水”。答辩口径要提前准备：**宏观指标 + 模拟/脱敏微观流水 + 融合口径说明**；演示数据必须标注来源与生成方式。
+- **数据真实性**：统计局是宏观汇总、高德是 POI 维度，二者都不能提供“单笔订单流水”。**2026-11-12 起口径升级**：微观流水不再用“模拟/脱敏”，改用 **Olist 公开真实订单数据（10 万笔，`source_kind='olist'`、`region_profile='olist-br'`，与四川数据物理隔离）** 加本地 Excel。答辩口径：**宏观指标（统计局）+ 供给点位（高德 POI）+ 真实公开交易流水（Olist，独立 profile）+ 本地流水（Excel）**，四者来源全部可查；演示数据必须标注来源。
 - **合规**：只调用公开 API/公开页面；遵守 robots.txt 与配额；不采集个人身份信息；评论数据若来自公开平台需注明用途与清洗方式。
 - **断网演示**：ECharts 本地化、LLM 基线降级、统计局数据落库后离线可读——三条兜底。
 - **性能**：SQLite 写入串行；`ingestion_row` 超过 50 万行时按批次归档（`store/archive/`），查询加索引；前端列表一律分页。
@@ -806,3 +867,7 @@ class LlmService:
 | 2026-10-24 | 设计 v1.3.1（文档对齐） | 清掉两处**文档与实现打架**：① §3.2 的 `job_run`/`job_event` DDL 按实际 `schema_v2.sql` 回写（真列名 `progress/stage_label/cancel_requested/operator_name/error_message/updated_at`、事件表 `event_id/created_at`）；② `ingestion_row` 在 §3.2 与 §3.2.1 各定义一遍且列名不同 → §3.2 删重复、留指针，**以 §3.2.1 为权威**（含 `source_kind/line_no/parse_error`） | `docs/ARCHITECTURE.md` 与 `schema_v2.sql` 逐列比对一致；S2 按 §3.2.1 建表 |
 | 2026-10-24 | S2 | 文件真实解析落地：新增 `datasource/base.py`（`FetchRequest` / `DataSourceAdapter` 协议 / `SourceRow` / `DataSourceError`）、`datasource/file_adapter.py`（`LocalFileAdapter` 流式 yield + `progress_ratio`）、`store/ingestion_row_store.py`（`compute_row_hash` / `insert_rows`（`INSERT OR IGNORE` + 唯一索引兜底）/ `fetch_existing_hashes` / `save_validation` / `list_rows`）；`schema_v2.sql` 增 `ingestion_row`（唯一索引 `batch_identifier+row_hash`、`idx_ingestion_row_batch`）与 `ingestion_validation`；`pipeline/ingestion_job.py` 的 `ingestion.parse` 改为真解析（zip 解包 → 逐文件适配器 → 列名归一 → 六列必填校验 → 全局指纹判重 → 分批 200 行落库 → 每文件一份校验报告 → 批次状态推进「预处理中→已完成」并把 `term_count` 写成真实好行数）；桥接新增 `list_ingestion_rows` / `get_ingestion_validation` 并补角色矩阵 `/api/ingest/rows/read`、`/api/ingest/validation/read`；接入台批次详情新增 成功/失败/重复 三个真实数字；`requirements.txt` 增加 `openpyxl==3.1.5`（xlsx 行数统计/解析依赖）。**顺带修掉 3 个实现缺陷**：① `main.py:ensure_database_initialized` 只跑 `schema.sql`，换机器 `job_run`/`ingestion_row` 全部不存在（任务一提交就 `no such table`）→ 改为统一调 `store.db_connection.initialize_schema()`；② 列名归一原先只做精确匹配，中文表头「消费品类 / 城市区域」对不上别名表（`品类/城市`）导致整份文件被判坏行 → 增加包含式模糊匹配（长别名优先，≥2 字）；③ 判重作用域原为「本批次」，而每次导入都会新建批次，同一文件导第二次仍会全量入库 → 改为按 `row_hash` 全库判重 | 17 项自测全 PASS：混合批次（utf-8 csv / GBK csv / json / xlsx / zip）`valid_rows=10`、`error_rows=2`、5 个批次、zip 内文件正确登记、`tourism.json` 口径识别为 `tourism`；`ingestion_row` 有 12 条真实原文行；同批再导 `duplicate_rows=16` 且新批次 0 行；txt 提交阶段被拒（「没有可接入的文件」）；无 token 读原始行被角色矩阵拒绝 |
 | 2026-10-25 | S3 | 清洗融合接真实数据：`cleaning_fusion_service` 重写为读 `ingestion_row`（新增 `ingestion_row_store.iter_ok_rows`/`list_distinct_batches`；`_resolve_field` 升级为大小写不敏感 + 长别名包含匹配）；**7 阶段**（接入15/去重25/缺失15/对齐15/融合15/校验10/输出5，job 全局进度按 15/40/55/70/85/95/100 累计）；异步化为 `cleaning.fusion` job（`submit_job` 替换 task_dispatch 同步 dispatch）；写 `consumption_record`：`db_connection._apply_migrations` 幂等补 7 列（merchant_name/user_identifier/category_label/city_region/source_kind/batch_identifier/raw_row_id）+ 唯一索引 `uq_consumption_record_raw_row`；新增 `store/consumption_record_store.py`；前端清洗页删掉 7 条假阶段 + 17 条假日志，改 `get_job` 700ms 轮询真实进度/日志；解析必填放宽为三列（商户/金额/时间），缺失值处理补默认；点静态演示行自动建任务不再崩 | `qa-results/s3_selfcheck.py` 10/10 PASS（标准库单文件、临时库、连跑幂等）；真实库 12 ok → 5 规范行（用户 ID U1001–U1005 真实解析 + 溯源列 + 幂等 0 新增/5 重复）；七阶段事件依次出现、日志含 INFO/WARN |
+| 2026-11-12 | S2-1a（代码落地） | 真实数据接入第一枪：新增 `schema_v3.sql`（`poi_merchant` / `poi_fetch_batch` / `poi_fetch_log`，`initialize_schema()` 改为 sql→v2→v3 顺序执行，实测 21 张表）；新增 `datasource/amap_adapter.py`（`AmapClient`：Session + 5s 超时 + 0.35s 节流 + 可重试错误码重试 + `ERROR_MESSAGE` 中文映射 + `parse_poi` 拆经纬度/业态）；新增 `scripts/fetch_amap_poi.py`（argparse、`ON CONFLICT(poi_id)` 幂等 upsert、每页写账本、守恒核对、`--dry-run`）；新增 `scripts/verify_s2_1a.py`（8 项检查：行数/唯一/经纬度非空/中国 bbox/四川 bbox/adcode 覆盖率/四川 adcode 前缀/账本守恒）；§5.3 统计局的定位改为"全国对照"，§5.4 回写实际接口与表 | 真实 Key 实测：临时库 2 次请求 → 50 行入库，`verify_s2_1a.py` 8/8 PASS；`py_compile` 四个文件通过；`--help` 与无 Key 报错路径均正常；测试库已删除 |
+| 2026-11-12 | 设计 v1.6（S2-1b 改向） | 数据源由"国家统计局"升级为**三级优先**：成都公共数据开放平台（区县级社零，核心）→ 四川省开放网（全省）→ 统计局（仅全国对照）；新增 `region_consumption_monthly` 统一表设计（含 `granularity`），行业报告改为只作答辩旁证不写抓取代码 | 文档评审；ROADMAP S2-1b 章节与总表/依赖链/取舍清单同步；下轮先出接口调研报告 |
+| 2026-11-12 | 设计 v1.5（文档升级，未动代码） | ① 新增 §4.1.1 **执行账本**：`job_event.payload_json` 冻结 5 键 `{input_rows, output_rows, dropped_rows, drop_reasons, elapsed_ms}`，约束 `input-output=dropped` 且 `sum(drop_reasons)=dropped_rows`，`elapsed_ms` 必须实测；② 新增 §5.7 **Olist 交易流水**数据源与 **`region_profile` 隔离**架构约束（`sichuan` 默认口径 / `olist-br` 只供清洗、规模实验、数据源卡片三处读，禁改写城市混入四川）；③ §7 新增第 8–10 条：执行账本渲染、前端资源本地化（`web/vendor/` 替代 CDN）、视觉标准冻结（深色科技风 / `map3D` 2.5D / 翻牌器 / 单飞线 / 下钻区县；不引 DataV 组件库）；④ §8 加编号口径说明（本节 S0–S8 为旧编号，排期以 `docs/ROADMAP.md` 为准） | 文档评审；对应 ROADMAP 新增 §0.5 技术路线口径、S2-1c 阶段、S3 账本步骤、S4 视觉标准与避坑表、§5 总表 10 行（合计 11.5 周） |
+| 2026-11-12 | 设计 v1.7（五维口径） | 系统定位由"空间 + 流水"三源升级为**五维融合**：空间（高德 POI）+ 人口（WorldPop 100m 栅格）+ 灯光（NPP-VIIRS 年均）+ 流水（Olist）+ 宏观（省统计局 / 商务厅）。新增 **S2-1d** 阶段（`schema_v5.sql` 的 `spatial_grid` / `raster_fetch_log`、`rasterio` 按点采样、POI 补 `grid_id` 关联，人口做分母、灯光做活力权重）。S2-1b 因实测结论（成都开放平台 HTTP 412 瑞数 JS 挑战、四川开放网详情页需登录、`data.stats.gov.cn` 403 拦出口 IP、`web_search` 工具 401）改为**「省统计局 HTML 表格主力 → 开放平台加分 → 统计年鉴 Excel 兜底」**，并引入**分层验收 L1/L2/L3**；`region_consumption_monthly` 主键补 `period_kind`（month / cumulative / year——统计局同页同时发布"本月"与"本月止累计"，不加会静默互相覆盖）、补 `yoy_pct` 列。明确**放弃大众点评 / 美团爬虫**（合规 + 不可二次分发 + 反爬不稳定），改用高德 `biz_ext.rating` / `cost` 作消费质量代理 | 文档评审；ROADMAP 升 v1.1（11 阶段 / 12.5 周），§0.5 口径表"数据源""分析深度"两行同步、§2 总览与 §3 依赖链插入 S2-1d、§6 补降级项与"压回 12 周"两条待老大点头的办法、§7 总叙事改写为五维、§8 不做清单新增 3 条、§9 偏差记录新增 3 行；`docs/DATASOURCE_RESEARCH_S2_1b.md` 新增 §12（五维分工 / 点评美团替代 / 实测覆盖率 `biz_ext` 100/100、`rating` 100/100、`cost` 100/100） |
